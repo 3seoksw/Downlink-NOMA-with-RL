@@ -1,0 +1,5 @@
+method: DQN
+input_dim:
+output_dim:
+
+data_dir: simulations/

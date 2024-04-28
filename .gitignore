@@ -1,0 +1,4 @@
+.DS_Store
+test.py
+pyrightconfig.json
+__pycache__/
