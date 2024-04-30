@@ -10,7 +10,7 @@ class ANN {
     nn.Linear online_network
     nn.Linear target_network
 
-    forward(self, input: state, model: str) --> reward
+    forward(self, input: state)
 }
 
 class BaseModel {
@@ -39,8 +39,8 @@ class CommEnv {
 
 class BaseStation{
     User[] users
-    float[] signals
-    float[] multiplexed_signals
+    float signals
+    float multiplexed_signals
 
     allocate_resources(self, user_idx: int, channel: float, power: float)
     multiplex_signals(self) multiplex multiple `self.signals` and save it to `multiplex_signals`
@@ -48,9 +48,11 @@ class BaseStation{
 }
 
 class NOMA_User {
-    float[] received_signals
+    float received_signals
 
     open_channel(self) constantly receive signals from BS and update `received_signals`
+    decode_signals_SIC(self)
+    send_history_state(self)
 }
 
 NOMA_User -- CommEnv
