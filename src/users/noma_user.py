@@ -6,6 +6,7 @@ class NOMA_User:
         self.user_id = id
         # self.decoder = Decoder(idx=self.user_id)
         self.signals = []
+        self.multiplexed_signals = []
 
         self.open_channel()
 
