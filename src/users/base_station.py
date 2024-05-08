@@ -32,7 +32,7 @@ class BaseStation:
         self.channel_user_pair.setdefault(channel, []).append((user_idx, power))
     # to multiplex, two same channel must be picked.
 
-    """"
+    """
     Test code for allocate_resource()
     u1 => ch 3 pow 10
     self.allocate_resources(user_idx=1, channel=3, power=10)
