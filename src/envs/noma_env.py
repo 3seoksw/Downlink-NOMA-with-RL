@@ -69,7 +69,7 @@ class NOMA_Env(BaseEnv):
         self.info = {"n_steps": 0}  # TODO: which keys to be inserted
         self.done = False
 
-        # key: channel_idx, value: list[user_idx, user_idx2]
+        # key: channel_idx, value: list[(user_idx, power1), (user_idx2, power2)]
         self.channel_info = {}
 
     def reset(self, seed: int | None):
@@ -141,6 +141,16 @@ class NOMA_Env(BaseEnv):
                 for user_idx in user_indices:
                     power = self.get_power(user_idx, channel_idx, self.metric)
                     self.base_station.allocate_resources(user_idx, channel_idx, power)
+
+    def allocate_resources(self, channel_idx, user_idx):
+        if self.channel_info.get(channel_idx) is None:
+            # Create(first user)
+            power = self.get_power(channel_idx, 0, self.metric)
+            self.channel_info[channel_idx] = list((user_idx, power))
+        else:
+            # second user
+            power = self.get_power(channel_idx, 1, self.metric)
+            self.channel_info[channel_idx].append((user_idx, power))
 
     def get_data_rate(self, channel_idx, n, metric):
         power_0 = self.get_power(channel_idx, 0, metric)
