@@ -38,16 +38,13 @@ class BaseEnv(Generic[ObsType, ActType]):
         """
         raise NotImplementedError
 
+    def clone(self):
+        """Clone this very specific environment and return cloned environment."""
+        raise NotImplementedError
 
-WrappedObsType = TypeVar("WrappedObsType")
-WrappedActType = TypeVar("WrappedActType")
 
-
-class Wrapper(
-    BaseEnv[WrappedObsType, WrappedActType],
-    Generic[WrappedObsType, WrappedActType, ObsType, ActType],
-):
-    def __init__(self, env: BaseEnv[ObsType, ActType]):
+class Wrapper(BaseEnv[ObsType, ActType]):
+    def __init__(self, env: BaseEnv):
         """
         Wraps the given environment.
 
@@ -57,7 +54,15 @@ class Wrapper(
         self.env = env
         assert isinstance(env, BaseEnv)
 
-    def step(
-        self, action: WrappedActType
-    ) -> tuple[WrappedObsType, float, dict[str, Any], bool]:
+    def __getattr__(self, name):
+        return getattr(self.env, name)
+
+    @classmethod
+    def class_name(cls):
+        return cls.__name__
+
+    def step(self, action: ActType) -> tuple[ObsType, float, dict[str, Any], bool]:
         return self.env.step(action)
+
+    def reset(self, seed: int | None) -> tuple[ObsType, dict[str, Any]]:
+        return self.env.reset(seed)
