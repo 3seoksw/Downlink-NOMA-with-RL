@@ -27,7 +27,7 @@ class ANN(BaseModel):
         self.decoder_linear = nn.Linear(hidden_dim, hidden_dim)
 
     # NOTE: The shape of the `input` is (batch_size, sequence_length, input_dim).
-    def forward(self, input):
+    def forward(self, input, user_channel_pair):
         # Pre-encdoer
         pre_encoder = self.pre_encoder_linear(input)
 
@@ -49,11 +49,10 @@ class ANN(BaseModel):
         )  # KQ^T =(batch, NK, 1)
 
         # Masking
-        mask = self.get_mask(input)
+        mask = self.get_mask(user_channel_pair)
         indices = np.where(mask == 1)
         batch_indices = indices[0]
         available_states_indices = indices[1]
-        print(available_states_indices)
 
         masked = decoder_mul[mask]
 
@@ -65,15 +64,14 @@ class ANN(BaseModel):
 
         return output
 
-    def get_mask(self, states):
-        user_idx = states[:, :, 0]
-        channel_idx = states[:, :, 1]
+    def get_mask(self, user_channel_pair):
+        user_idx = user_channel_pair[:, :, 0]
+        channel_idx = user_channel_pair[:, :, 1]
         values = channel_idx * self.N + user_idx
         values = values.to(torch.int64)
-        print(values)
 
         # Mask
-        mask = torch.ones(states.shape[0], states.shape[1])
+        mask = torch.ones(user_channel_pair.shape[0], self.N * self.K)
         for i, batch in enumerate(values):
             channel_counts = torch.zeros(self.K)
             for n in batch:  # Traverse through history states and filter out
