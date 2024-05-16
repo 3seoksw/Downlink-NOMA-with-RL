@@ -10,7 +10,7 @@ class NOMA_Env(BaseEnv):
     The state is a pair of user and channel.
     For instance, s_t = (U_n, C_k) represents n-th user has been assigned to k-th channel.
     N and K represents the number of users and channels, respectively.
-    Hence, the state space contains NK states and the size of it is (NK, 1).
+    Hence, the state space contains NK states and the size of it is (NK, 2).
     States are in the form of the following:
 
            |      U_0       |      U_1       |      U_2       | ... |      U_{N-1}
@@ -22,8 +22,7 @@ class NOMA_Env(BaseEnv):
        .   |                |                |                |     |
     C_{K-1}| (U_0, C_{K-1}) | (U_1, C_{K-1}) | (U_2, C_{K-1}) | ... | (U_{N-1}, C_{K-1})
 
-    Each state's value is either 0 or 1 denoting false and true, repectively.
-    If the state (U_n, C_k) is 1, it means that the n-th user has been assigned to the k-th channel.
+    Each state's value is consist of user and channel information, distance and CNR, repectively.
 
     ### Action Space
     The action from this NOMA environment is to assign a channel to a user.
@@ -63,7 +62,7 @@ class NOMA_Env(BaseEnv):
         self.min_data_rate = self.env_kwargs["min_data_rate"]  # 2 bps/Hz
         self.metric = self.env_kwargs["metric"]
 
-        self.states = np.zeros((self.K * self.N), dtype=float)
+        self.states = torch.zeros(self.K * self.N, 2)
         self.info = {"n_steps": 0}  # TODO: which keys to be inserted
         self.done = False
 
@@ -88,16 +87,9 @@ class NOMA_Env(BaseEnv):
 
         self.done = False
 
-        self.states = np.zeros((self.N, 2))
-        self.states = torch.tensor(self.states, dtype=torch.float32)
+        self.states = torch.zeros(self.K * self.N, 2)
 
-        self.user_channel_indices = np.negative(np.ones((self.N, 2)))
-        self.user_channel_indices = torch.tensor(
-            self.user_channel_indices, dtype=torch.int
-        )
-
-        # self.info = {"n_steps": 0, "user_channel_indices": self.user_channel_indices}
-        self._update_info(0, self.user_channel_indices)
+        self.info = {"n_steps": 0}
 
         return (self.states, self.info)
 
@@ -120,17 +112,12 @@ class NOMA_Env(BaseEnv):
         self.allocate_resources(channel_idx, user_idx)
 
         # States update
-        self.states[step][0] = self.user_info[user_idx]["distance"]
-
+        nk = channel_idx * self.K + user_idx
+        self.states[nk][0] = self.user_info[user_idx]["distance"]
         for usr_cnr_pair in self.channel_info[channel_idx]:
             usr, cnr = usr_cnr_pair
             if user_idx == usr:
                 self.states[step][1] = cnr
-
-        # User-channel pair update
-        self.user_channel_indices[step][0] = user_idx
-        self.user_channel_indices[step][1] = channel_idx
-        self._update_info(step + 1, self.user_channel_indices)
 
         reward = self.user_info[user_idx]["data_rate"]
 
@@ -144,23 +131,23 @@ class NOMA_Env(BaseEnv):
 
     def allocate_resources(self, channel_idx, user_idx):
         if self.channel_info.get(channel_idx) is None:
+            cnr = self.get_cnr(channel_idx, 0)
+            self.channel_info[channel_idx] = list((user_idx, cnr))
+
             power = self.get_power(channel_idx, 0, self.metric)
             self.set_power(user_idx, power)
 
             data_rate = self.get_data_rate(channel_idx, 0, self.metric)
             self.set_data_rate(user_idx, data_rate)
-
-            cnr = self.get_cnr(channel_idx, 0)
-            self.channel_info[channel_idx] = list((user_idx, cnr))
         else:
+            cnr = self.get_cnr(channel_idx, 1)
+            self.channel_info[channel_idx].append((user_idx, cnr))
+
             power = self.get_power(channel_idx, 1, self.metric)
             self.set_power(user_idx, power)
 
             data_rate = self.get_data_rate(channel_idx, 1, self.metric)
             self.set_data_rate(user_idx, data_rate)
-
-            cnr = self.get_cnr(channel_idx, 1)
-            self.channel_info[channel_idx].append((user_idx, cnr))
 
     def set_data_rate(self, user_idx, data_rate):
         self.user_info[user_idx]["data_rate"] = data_rate
@@ -339,5 +326,5 @@ class NOMA_Env(BaseEnv):
 
         return user_dict
 
-    def _update_info(self, steps, indices):
-        self.info = {"n_steps": steps, "user_channel_indices": indices}
+    def _update_info(self, steps):
+        self.info = {"n_steps": steps}
