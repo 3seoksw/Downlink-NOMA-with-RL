@@ -8,7 +8,7 @@ from model.base_model import BaseModel
 class ANN(BaseModel):
     """Attention-based Neural Network"""
 
-    def __init__(self, input_dim=2, hidden_dim=128, num_users=10, num_channels=15):
+    def __init__(self, input_dim=2, hidden_dim=128, num_users=40, num_channels=20):
         super().__init__()
         self.N = num_users
         self.K = num_channels
@@ -34,7 +34,6 @@ class ANN(BaseModel):
         # Encoder
         embedding = self.encoder(pre_encoder)  # (batch, length(=NK), hidden)
         last_embedding = embedding[:, -1, :]
-        print(f"EMBED: {embedding.shape}")
 
         # Pre-decoder
         state_combine = torch.mean(embedding, dim=1)

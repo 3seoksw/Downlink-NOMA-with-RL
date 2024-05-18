@@ -49,13 +49,13 @@ class NOMA_Env(BaseEnv):
         self.batch_size = self.env_kwargs["batch_size"]  # 40
         self.N = self.env_kwargs["num_users"]  # 40
         self.K = self.env_kwargs["num_channels"]  # 20
-        self.bandwidth_total = self.env_kwargs["B_tot"]  # 5 MHz
+        self.bandwidth_total = self.env_kwargs["B_tot"]  # 5 MHz (5e6 Hz)
         self.channel_bandwidth = self.bandwidth_total / self.K  # 2,500,000 Hz
         self.alpha = self.env_kwargs["alpha"]  # path loss coefficient (alpha=2)
         self.total_power = self.env_kwargs["P_T"]  # 2 ~ 12 Watt
         self.seed = self.env_kwargs["seed"]  # 2024
         self.channels = self.env_kwargs["channels"]
-        self.noise = self.env_kwargs["N_0"]  # -170 dBm
+        self.noise = self.env_kwargs["N_0"]  # -170 dBm/Hz
         self.channel_variance = (  # WARN: erase `/ self.K` if needed
             self.bandwidth_total * self.noise / self.K
         )  # sigma_{z_k}^2
@@ -106,7 +106,7 @@ class NOMA_Env(BaseEnv):
             Say the user's index as `n` and channel's index as `k`.
             Then states will be updated as `self.states[N * k + n] = 1`.
         """
-        step = self.info["n_steps"]
+        self.info["n_steps"] += 1
 
         user_idx, channel_idx = action
         self.allocate_resources(channel_idx, user_idx)
@@ -114,10 +114,7 @@ class NOMA_Env(BaseEnv):
         # States update
         nk = channel_idx * self.K + user_idx
         self.states[nk][0] = self.user_info[user_idx]["distance"]
-        for usr_cnr_pair in self.channel_info[channel_idx]:
-            usr, cnr = usr_cnr_pair
-            if user_idx == usr:
-                self.states[step][1] = cnr
+        self.states[nk][1] = self.user_info[user_idx]["CNR"]
 
         reward = self.user_info[user_idx]["data_rate"]
 
@@ -131,72 +128,86 @@ class NOMA_Env(BaseEnv):
 
     def allocate_resources(self, channel_idx, user_idx):
         if self.channel_info.get(channel_idx) is None:
+            self.channel_info[channel_idx] = []
+            self.channel_info[channel_idx].append(user_idx)
             cnr = self.get_cnr(channel_idx, 0)
-            self.channel_info[channel_idx] = list((user_idx, cnr))
-
-            power = self.get_power(channel_idx, 0, self.metric)
-            self.set_power(user_idx, power)
-
-            data_rate = self.get_data_rate(channel_idx, 0, self.metric)
-            self.set_data_rate(user_idx, data_rate)
+            # power, p1 = self.get_power(channel_idx, self.metric)
+            # data_rate = self.get_data_rate(channel_idx, 0, self.metric)
         else:
+            self.channel_info[channel_idx].append(user_idx)
             cnr = self.get_cnr(channel_idx, 1)
-            self.channel_info[channel_idx].append((user_idx, cnr))
+            # p0, power = self.get_power(channel_idx, self.metric)
+            # data_rate = self.get_data_rate(channel_idx, 1, self.metric)
 
-            power = self.get_power(channel_idx, 1, self.metric)
-            self.set_power(user_idx, power)
+        self.set_cnr(user_idx, cnr)
+        # self.set_power(user_idx, power)
+        # self.set_data_rate(user_idx, data_rate)
 
-            data_rate = self.get_data_rate(channel_idx, 1, self.metric)
-            self.set_data_rate(user_idx, data_rate)
+    def set_cnr(self, user_idx, cnr):
+        self.user_info[user_idx]["CNR"] = cnr
 
     def set_data_rate(self, user_idx, data_rate):
         self.user_info[user_idx]["data_rate"] = data_rate
 
     def get_data_rate(self, channel_idx, n, metric):
-        power_0 = self.get_power(channel_idx, 0, metric)
+        power_0 = self.get_power(channel_idx, metric)
         cnr_0 = self.get_cnr(channel_idx, 0)
         channel = self.channel_bandwidth * channel_idx
 
         if n == 0:
             return channel * np.log2(1 + power_0 * cnr_0)
         else:  # n == 1
-            power_1 = self.get_power(channel_idx, 1, metric)
+            power_1 = self.get_power(channel_idx, metric)
             cnr_1 = self.get_cnr(channel_idx, 1)
             return channel * np.log2(1 + (power_1 * cnr_1) / (1 + power_0 * cnr_1))
 
     def set_power(self, user_idx, power):
         self.user_info[user_idx]["power"] = power
 
-    # TODO:
-    def get_power(self, channel_idx, n: int = 0, metric: str = "MSR"):
-        user_idx = self.channel_info[channel_idx][n]
-        q = self.get_power_budget(channel_idx, metric)
+    def get_power(self, channel_idx, metric: str = "MSR"):
+        la = self.find_msr_lambda(power=self.total_power)
+        cnr0 = self.get_cnr(channel_idx, 0)
+        cnr1 = self.get_cnr(channel_idx, 1)
+        A = self.get_A(channel_idx)
         if metric == "MSR":
-            gamma_1 = self.get_cnr(channel_idx, 1)
-            A = self.get_A(channel_idx)
-
-            p_0 = (gamma_1 * q - A + 1) / (A * gamma_1)
-            p_1 = q - p_0
+            q_k = self.get_msr_power_budget(cnr0, cnr1, A, la)
+            p_0 = (cnr1 * q_k - A + 1) / (A * cnr1)
+            p_1 = q_k - p_0
 
             return (p_0, p_1)
+        # TODO:
         elif metric == "MMR":
-            return -1
+            return (-1, -1)
         else:
-            raise KeyError(
-                f"No such metric is available. Choose either `MMR` or `MSR`."
-            )
+            raise KeyError("No such metric is available. Choose either `MMR` or `MSR`.")
 
-    # TODO
-    def get_power_budget(self, channel_idx, metric: str):
-        """Calculate q^k"""
-        if metric == "MSR":
-            q = 0
-        elif metric == "MMR":
-            q = 0
-        else:
-            raise KeyError("Choose either `MSR` or `MMR`.")
+    def get_msr_power_budget(self, cnr0, cnr1, A, la):
+        """Calculate q^k under MSR metric"""
+        B_c = self.bandwidth_total / self.K
+        q_k = (B_c / la) - (A / cnr0) + (A / cnr1) - (1 / cnr1)
 
-        return q
+        return q_k
+
+    def find_msr_lambda(
+        self, power=12, start=-1e10, end=1e10, epsilon=1e-10, threshold=1e-5
+    ):
+        while True:
+            la = (start + end + epsilon) / 2
+            sum_q_k = 0
+            for channel_idx in range(self.K):
+                A = self.get_A(channel_idx)
+                cnr0 = self.get_cnr(channel_idx, 0)
+                cnr1 = self.get_cnr(channel_idx, 1)
+                q_k = self.get_msr_power_budget(cnr0, cnr1, A, la)
+                sum_q_k += q_k
+
+            if np.abs(sum_q_k - power) < threshold or sum_q_k == power:
+                return la
+
+            if sum_q_k > power:
+                start = la
+            else:
+                end = la
 
     def get_gamma_k(self, channel_idx):
         A = self.get_A(channel_idx)
@@ -228,36 +239,20 @@ class NOMA_Env(BaseEnv):
         X = numerator / (4 * denominator)
         return X
 
-    def get_sinr(self, channel_idx):
-        cnr_0 = self.get_cnr(channel_idx, 0)
-        cnr_1 = self.get_cnr(channel_idx, 1)
-
-        A = self.get_A(channel_idx)
-
-        return (A * (A - 1)) / cnr_0 + (A - 1) / cnr_1
-
-    # WARN: A^k >= 2
     def get_A(self, channel_idx):
-        channel_bandwidth = channel_idx * self.channel_bandwidth
-        return 2 ** (self.min_data_rate / channel_bandwidth)
+        # channel_bandwidth = channel_idx * self.channel_bandwidth
+        return 2**2
 
     def get_cnr(self, channel_idx, n: int = 0):
         """
         CNR (channel-to-noise-ratio):
             Gamma^k_n = |h^k_n|^2 / sigma^2_{z_k}
         """
-        user_idx = self.channel_info[channel_idx][n]
-        h = self.get_channel_response(user_idx, channel_idx)
+        # user_idx = self.channel_info[channel_idx][n]
+        h = self.get_channel_response(channel_idx, n)
         cnr = np.abs(h) ** 2 / self.channel_variance
 
         return cnr
-
-    def get_awgn(self):
-        """
-        Additive White Noise Gaussian Noise (AWGN): z^k_n
-        Mean: 0
-        Variance: sigma^2_{z^k}
-        """
 
     def get_channel_response(self, channel_idx, n: int = 0):
         """
@@ -268,13 +263,13 @@ class NOMA_Env(BaseEnv):
         n is either 0 or 1.
         """
         user_idx = self.channel_info[channel_idx][n]
-        g = self.sample_from_rayleigh_distribution(channel_idx, n)
+        g = self.sample_from_rayleigh_distribution()
         d = self.get_distance_loss(user_idx)
         h = g * d
 
         return h
 
-    def sample_from_rayleigh_distribution(self, channel_idx, n: int = 0):
+    def sample_from_rayleigh_distribution(self):
         """
         Rayleight Fading: g^{k}_{n},
         f(x; sigma) = x / sigma^2 * e^{-x^2 / 2 sigma^2}, x >= 0
@@ -284,16 +279,9 @@ class NOMA_Env(BaseEnv):
             `n` is either 0 or 1 denoting whether the user has been assigned first
             or not.
         """
-        user_idx = self.channel_info[channel_idx][n]
-        distance = self.user_info[user_idx]["distance"]
-
-        # WARN: Deprecated
-        # channel_mean = np.mean(self.channels)
-        # channel = self.channels[channel_idx]
-        # var_channel = np.mean((channel - channel_mean) ** 2)
 
         rng = np.random.default_rng(seed=self.seed)
-        rayleigh_dist = rng.rayleigh(self.channel_variance, distance)
+        rayleigh_dist = rng.rayleigh()
 
         return rayleigh_dist
 
@@ -322,6 +310,7 @@ class NOMA_Env(BaseEnv):
             "distance": np.random.randint(50, 300),
             "power": 0,
             "data_rate": 0,
+            "CNR": 0,
         }
 
         return user_dict
