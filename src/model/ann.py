@@ -8,7 +8,7 @@ from model.base_model import BaseModel
 class ANN(BaseModel):
     """Attention-based Neural Network"""
 
-    def __init__(self, input_dim=2, hidden_dim=128, num_users=10, num_channels=15):
+    def __init__(self, input_dim=2, hidden_dim=128, num_users=40, num_channels=20):
         super().__init__()
         self.N = num_users
         self.K = num_channels
@@ -53,7 +53,6 @@ class ANN(BaseModel):
         indices = np.where(mask == 1)
         batch_indices = indices[0]
         available_states_indices = indices[1]
-        print(available_states_indices)
 
         masked = decoder_mul[mask]
 
@@ -65,15 +64,14 @@ class ANN(BaseModel):
 
         return output
 
-    def get_mask(self, states):
-        user_idx = states[:, :, 0]
-        channel_idx = states[:, :, 1]
+    def get_mask(self, input):
+        user_idx = input[:, :, 0]
+        channel_idx = input[:, :, 1]
         values = channel_idx * self.N + user_idx
         values = values.to(torch.int64)
-        print(values)
 
         # Mask
-        mask = torch.ones(states.shape[0], states.shape[1])
+        mask = torch.ones(input.shape[0], self.N * self.K)
         for i, batch in enumerate(values):
             channel_counts = torch.zeros(self.K)
             for n in batch:  # Traverse through history states and filter out

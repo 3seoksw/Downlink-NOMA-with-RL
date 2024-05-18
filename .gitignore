@@ -1,5 +1,5 @@
 .DS_Store
-test.*
+test*
 pyrightconfig.json
 __pycache__/
 logs/
