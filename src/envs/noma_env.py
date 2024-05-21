@@ -30,7 +30,10 @@ class NOMA_Env(BaseEnv):
     The action is in the form of `(user_index, channel_index)`.
     """
 
-    def __init__(self, **env_kwargs):
+    def __init__(self, device: str, **env_kwargs):
+        super().__init__(device)
+        self.device_name = device
+
         default_env_kwargs = {
             "batch_size": 40,
             "num_users": 40,
@@ -62,7 +65,7 @@ class NOMA_Env(BaseEnv):
         self.min_data_rate = self.env_kwargs["min_data_rate"]  # 2 bps/Hz
         self.metric = self.env_kwargs["metric"]
 
-        self.states = torch.zeros(self.K * self.N, 2)
+        self.states = torch.zeros(self.K * self.N, 2).to(self.device)
         self.info = {"n_steps": 0}  # TODO: which keys to be inserted
         self.done = False
 
@@ -87,7 +90,7 @@ class NOMA_Env(BaseEnv):
 
         self.done = False
 
-        self.states = torch.zeros(self.K * self.N, 2)
+        self.states = torch.zeros(self.K * self.N, 2).to(self.device)
 
         self.info = {"n_steps": 0}
 
@@ -124,7 +127,7 @@ class NOMA_Env(BaseEnv):
         return (self.states, reward, self.info, self.done)
 
     def clone(self):
-        return NOMA_Env(env_kwargs=self.env_kwargs)
+        return NOMA_Env(self.device_name, env_kwargs=self.env_kwargs)
 
     def allocate_resources(self, channel_idx, user_idx):
         if self.channel_info.get(channel_idx) is None:
