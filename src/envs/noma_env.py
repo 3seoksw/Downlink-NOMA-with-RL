@@ -165,7 +165,7 @@ class NOMA_Env(BaseEnv):
         self.user_info[user_idx]["power"] = power
 
     def get_power(self, channel_idx, metric: str = "MSR"):
-        la = self.find_msr_lambda(power=self.total_power)
+        la = self.find_lambda(power=self.total_power)
         cnr0 = self.get_cnr(channel_idx, 0)
         cnr1 = self.get_cnr(channel_idx, 1)
         A = self.get_A(channel_idx)
@@ -177,8 +177,7 @@ class NOMA_Env(BaseEnv):
             return (p_0, p_1)
         # TODO:
         elif metric == "MMR":
-            z = self.get_Z(la)
-            q_k = (z * cnr1 + cnr0) * (z - 1) / (cnr0 * cnr1)
+            q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
             p_0 = -(cnr0 + cnr1) + np.sqrt((cnr0 + cnr1)**2 + 4 * cnr0 * (cnr1)**2 * q_k)
             p_1 = q_k - p_0
 
@@ -195,7 +194,16 @@ class NOMA_Env(BaseEnv):
 
         return q_k
 
-    def find_msr_lambda(
+
+    def get_mmr_power_budget(self, cnr0, cnr1, la):
+        """calculate q^k under MMR metric"""
+        z = self.get_Z(la)
+        q_k = (z * cnr1 + cnr0) * (z - 1) / (cnr0 * cnr1)
+
+        return q_k
+
+
+    def find_lambda(
         self, power=12, start=-1e10, end=1e10, epsilon=1e-10, threshold=1e-5
     ):
         while True:
