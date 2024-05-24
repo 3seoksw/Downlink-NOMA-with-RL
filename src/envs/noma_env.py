@@ -165,11 +165,12 @@ class NOMA_Env(BaseEnv):
         self.user_info[user_idx]["power"] = power
 
     def get_power(self, channel_idx, metric: str = "MSR"):
-        la = self.find_lambda(power=self.total_power)
         cnr0 = self.get_cnr(channel_idx, 0)
         cnr1 = self.get_cnr(channel_idx, 1)
-        A = self.get_A(channel_idx)
+
         if metric == "MSR":
+            A = self.get_A(channel_idx)
+            la = self.find_msr_lambda(power=self.total_power)
             q_k = self.get_msr_power_budget(cnr0, cnr1, A, la)
             p_0 = (cnr1 * q_k - A + 1) / (A * cnr1)
             p_1 = q_k - p_0
@@ -177,6 +178,7 @@ class NOMA_Env(BaseEnv):
             return (p_0, p_1)
         # TODO:
         elif metric == "MMR":
+            la = self.find_mmr_lambda(power=self.total_power)
             q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
             p_0 = -(cnr0 + cnr1) + np.sqrt((cnr0 + cnr1)**2 + 4 * cnr0 * (cnr1)**2 * q_k)
             p_1 = q_k - p_0
@@ -203,7 +205,7 @@ class NOMA_Env(BaseEnv):
         return q_k
 
 
-    def find_lambda(
+    def find_msr_lambda(
         self, power=12, start=-1e10, end=1e10, epsilon=1e-10, threshold=1e-5
     ):
         while True:
@@ -223,6 +225,27 @@ class NOMA_Env(BaseEnv):
                 start = la
             else:
                 end = la
+
+    def find_mmr_lambda(
+        self, power=12, start=-1e10, end=1e10, epsilon=1e-10, threshold=1e-5
+    ):
+        while True:
+            la = (start + end + epsilon) / 2
+            sum_q_k = 0
+            for channel_idx in range(self.K):
+                cnr0 = self.get_cnr(channel_idx, 0)
+                cnr1 = self.get_cnr(channel_idx, 1)
+                q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
+                sum_q_k += q_k
+
+            if np.abs(sum_q_k - power) < threshold or sum_q_k == power:
+                return la
+
+            if sum_q_k > power:
+                start = la
+            else:
+                end = la
+
 
     def get_gamma_k(self, channel_idx):
         A = self.get_A(channel_idx)
