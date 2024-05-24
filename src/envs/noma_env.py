@@ -92,11 +92,16 @@ class NOMA_Env(BaseEnv):
 
         self.states = torch.zeros(self.K * self.N, 2).to(self.device)
 
-        self.info = {"n_steps": 0}
+        user_idx = np.random.randint(self.N)
+        channel_idx = np.random.randint(self.K)
+        random_action = user_idx + self.K * channel_idx
+        self.step(random_action)
+
+        self.info = {"n_steps": 1}
 
         return (self.states, self.info)
 
-    def step(self, action: tuple):
+    def step(self, action):
         """
         Run one step of the NOMA system (environment).
 
@@ -111,11 +116,12 @@ class NOMA_Env(BaseEnv):
         """
         self.info["n_steps"] += 1
 
-        user_idx, channel_idx = action
+        channel_idx = action // self.N
+        user_idx = action - channel_idx * self.N
         self.allocate_resources(channel_idx, user_idx)
 
         # States update
-        nk = channel_idx * self.K + user_idx
+        nk = channel_idx * self.N + user_idx
         self.states[nk][0] = self.user_info[user_idx]["distance"]
         self.states[nk][1] = self.user_info[user_idx]["CNR"]
 
@@ -307,7 +313,7 @@ class NOMA_Env(BaseEnv):
                 "data_rate": float,
             }
         """
-        np.random.seed(seed)
+        # np.random.seed(seed)
         user_dict = {
             "user_idx": idx,
             "distance": np.random.randint(50, 300),
