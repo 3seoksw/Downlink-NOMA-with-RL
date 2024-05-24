@@ -68,7 +68,7 @@ class ANN(BaseModel):
         decoder_mul = decoder_mul.squeeze(2)
         masked = decoder_mul.masked_fill(self.mask, float("-inf"))
 
-        compatibility = nn.functional.softmax(masked)
+        compatibility = nn.functional.softmax(masked, dim=1)
 
         return compatibility
 
