@@ -177,7 +177,14 @@ class NOMA_Env(BaseEnv):
             return (p_0, p_1)
         # TODO:
         elif metric == "MMR":
-            return (-1, -1)
+            z = self.get_Z(la)
+            q_k = (z * cnr1 + cnr0) * (z - 1) / (cnr0 * cnr1)
+            p_0 = -(cnr0 + cnr1) + np.sqrt((cnr0 + cnr1)**2 + 4 * cnr0 * (cnr1)**2 * q_k)
+            p_1 = q_k - p_0
+
+            return (p_0, p_1)
+
+
         else:
             raise KeyError("No such metric is available. Choose either `MMR` or `MSR`.")
 
