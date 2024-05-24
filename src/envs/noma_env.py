@@ -176,25 +176,21 @@ class NOMA_Env(BaseEnv):
     def get_power(self, channel_idx, metric: str = "MSR"):
         cnr0 = self.get_cnr(channel_idx, 0)
         cnr1 = self.get_cnr(channel_idx, 1)
+        la = self.find_lambda(power=self.total_power, metric=self.metric)
 
         if metric == "MSR":
             A = self.get_A(channel_idx)
-            la = self.find_msr_lambda(power=self.total_power)
             q_k = self.get_msr_power_budget(cnr0, cnr1, A, la)
             p_0 = (cnr1 * q_k - A + 1) / (A * cnr1)
             p_1 = q_k - p_0
-
             return (p_0, p_1)
-        # TODO:
         elif metric == "MMR":
-            la = self.find_mmr_lambda(power=self.total_power)
             q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
-            p_0 = -(cnr0 + cnr1) + np.sqrt((cnr0 + cnr1)**2 + 4 * cnr0 * (cnr1)**2 * q_k)
+            p_0 = -(cnr0 + cnr1) + np.sqrt(
+                (cnr0 + cnr1) ** 2 + 4 * cnr0 * (cnr1) ** 2 * q_k
+            )
             p_1 = q_k - p_0
-
             return (p_0, p_1)
-
-
         else:
             raise KeyError("No such metric is available. Choose either `MMR` or `MSR`.")
 
@@ -205,18 +201,23 @@ class NOMA_Env(BaseEnv):
 
         return q_k
 
-
     def get_mmr_power_budget(self, cnr0, cnr1, la):
-        """calculate q^k under MMR metric"""
+        """Calculate q^k under MMR metric"""
         z = self.get_Z(la)
         q_k = (z * cnr1 + cnr0) * (z - 1) / (cnr0 * cnr1)
 
         return q_k
 
-
-    def find_msr_lambda(
-        self, power=12, start=-1e10, end=1e10, epsilon=1e-10, threshold=1e-5
+    def find_lambda(
+        self,
+        power=12,
+        start=-1e10,
+        end=1e10,
+        epsilon=1e-10,
+        threshold=1e-5,
+        metric: str = "MSR",
     ):
+        """Execute bisection method to find lagrangian coefficient"""
         while True:
             la = (start + end + epsilon) / 2
             sum_q_k = 0
@@ -224,7 +225,14 @@ class NOMA_Env(BaseEnv):
                 A = self.get_A(channel_idx)
                 cnr0 = self.get_cnr(channel_idx, 0)
                 cnr1 = self.get_cnr(channel_idx, 1)
-                q_k = self.get_msr_power_budget(cnr0, cnr1, A, la)
+                if metric == "MSR":
+                    q_k = self.get_msr_power_budget(cnr0, cnr1, A, la)
+                elif metric == "MMR":
+                    q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
+                else:
+                    raise KeyError(
+                        "No such metric is available. Choose either `MMR` or `MSR`."
+                    )
                 sum_q_k += q_k
 
             if np.abs(sum_q_k - power) < threshold or sum_q_k == power:
@@ -234,27 +242,6 @@ class NOMA_Env(BaseEnv):
                 start = la
             else:
                 end = la
-
-    def find_mmr_lambda(
-        self, power=12, start=-1e10, end=1e10, epsilon=1e-10, threshold=1e-5
-    ):
-        while True:
-            la = (start + end + epsilon) / 2
-            sum_q_k = 0
-            for channel_idx in range(self.K):
-                cnr0 = self.get_cnr(channel_idx, 0)
-                cnr1 = self.get_cnr(channel_idx, 1)
-                q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
-                sum_q_k += q_k
-
-            if np.abs(sum_q_k - power) < threshold or sum_q_k == power:
-                return la
-
-            if sum_q_k > power:
-                start = la
-            else:
-                end = la
-
 
     def get_gamma_k(self, channel_idx):
         A = self.get_A(channel_idx)
