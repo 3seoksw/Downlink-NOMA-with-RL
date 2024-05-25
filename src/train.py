@@ -7,12 +7,14 @@ from model.ann import ANN
 from trainer.trainer import Trainer
 
 
-@hydra.main(version_base=None, config_path="config", config_name="train")
+@hydra.main(version_base=None, config_path="../config", config_name="train")
 def train(cfg):
     device = "cpu"
 
     env = NOMA_Env(device)
     env = VectorizedEnv(env=env, num_envs=cfg.batch_size)
+    env_bl = NOMA_Env(device)
+    env_bl = VectorizedEnv(env=env_bl, num_envs=cfg.batch_size)
 
     model = ANN(
         input_dim=cfg.input_dim,
@@ -24,6 +26,7 @@ def train(cfg):
 
     trainer = Trainer(
         env=env,
+        env_bl=env_bl,
         model=model,
         metric=cfg.metric,
         accelerator="cpu",

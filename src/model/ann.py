@@ -13,10 +13,12 @@ class ANN(BaseModel):
     ):
         super().__init__()
         self.batch_size = batch_size
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
         self.N = num_users
         self.K = num_channels
+
         self.prev_state = torch.zeros(batch_size, self.N * self.K, input_dim)
-        self.prev_state_idx = 0
         self.mask = torch.zeros(batch_size, self.N * self.K, dtype=torch.bool)
         self.visited_states = torch.zeros(batch_size, self.N * self.K, dtype=torch.bool)
 
@@ -27,7 +29,7 @@ class ANN(BaseModel):
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=hidden_dim, nhead=8, batch_first=True
         )
-        self.encoder = nn.TransformerEncoder(encoder_layer=encoder_layer, num_layers=6)
+        self.encoder = nn.TransformerEncoder(encoder_layer=encoder_layer, num_layers=3)
 
         # Decoder (Single Head Attention Layer)
         self.decoder_combined = nn.Linear(hidden_dim * 2, hidden_dim)
@@ -98,3 +100,10 @@ class ANN(BaseModel):
             self.mask[batch_idx, state_indices] = True
 
         self.mask[self.visited_states] = True
+
+    def _reset(self):
+        self.prev_state = torch.zeros(self.batch_size, self.N * self.K, self.input_dim)
+        self.mask = torch.zeros(self.batch_size, self.N * self.K, dtype=torch.bool)
+        self.visited_states = torch.zeros(
+            self.batch_size, self.N * self.K, dtype=torch.bool
+        )
