@@ -37,8 +37,8 @@ class NOMA_Env(BaseEnv):
 
         default_env_kwargs = {
             "batch_size": 40,
-            "num_users": 8,
-            "num_channels": 4,
+            "num_users": 40,
+            "num_channels": 20,
             "channels": [],
             "B_tot": 5e6,
             "alpha": 2,
@@ -76,7 +76,7 @@ class NOMA_Env(BaseEnv):
         # NOTE: See `_generate_user()` for more information
         self.user_info = []
 
-    def reset(self, seed: Optional[int]):
+    def reset(self, seed: Optional[int] = None):
         """
         Reset the NOMA environment.
 
@@ -131,11 +131,17 @@ class NOMA_Env(BaseEnv):
         if self.info["n_steps"] == self.N:
             self.done = True
             self.allocate_power()
-            sum_rate = 0
-            for i in range(self.N):
-                sum_rate += self.user_info[i]["data_rate"]
-            print(sum_rate / 1e6)
-            # print(self.user_info)
+            if self.metric == "MSR":
+                sum_rate = 0
+                for i in range(self.N):
+                    sum_rate += self.user_info[i]["data_rate"]
+                reward = sum_rate / 1e6
+            elif self.metric == "MMR":
+                min_data_rate = self.user_info[0]["data_rate"]
+                for i in range(self.N):
+                    data_rate = self.user_info[i]["data_rate"]
+                    min_data_rate = min(min_data_rate, data_rate)
+                reward = min_data_rate / 1e6
 
         return (self.states, reward, self.info, self.done)
 
