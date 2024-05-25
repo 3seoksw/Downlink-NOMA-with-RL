@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 
+from typing import Optional
 from envs.core_env import BaseEnv
 
 
@@ -75,7 +76,7 @@ class NOMA_Env(BaseEnv):
         # NOTE: See `_generate_user()` for more information
         self.user_info = []
 
-    def reset(self, seed: int | None):
+    def reset(self, seed: Optional[int]):
         """
         Reset the NOMA environment.
 
