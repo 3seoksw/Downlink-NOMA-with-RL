@@ -1,3 +1,5 @@
+import torch
+
 from typing import Generic, TypeVar, Any
 
 
@@ -9,6 +11,16 @@ class BaseEnv(Generic[ObsType, ActType]):
     """
     Base environment.
     """
+
+    def __init__(self, device: str):
+        if device is None:
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
+        self.device = torch.device(device)
 
     def step(self, action: ActType) -> tuple[ObsType, float, dict[str, Any], bool]:
         """

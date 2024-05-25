@@ -30,7 +30,10 @@ class NOMA_Env(BaseEnv):
     The action is in the form of `(user_index, channel_index)`.
     """
 
-    def __init__(self, **env_kwargs):
+    def __init__(self, device: str, **env_kwargs):
+        super().__init__(device)
+        self.device_name = device
+
         default_env_kwargs = {
             "batch_size": 40,
             "num_users": 40,
@@ -62,7 +65,7 @@ class NOMA_Env(BaseEnv):
         self.min_data_rate = self.env_kwargs["min_data_rate"]  # 2 bps/Hz
         self.metric = self.env_kwargs["metric"]
 
-        self.states = torch.zeros(self.K * self.N, 2)
+        self.states = torch.zeros(self.K * self.N, 2).to(self.device)
         self.info = {"n_steps": 0}  # TODO: which keys to be inserted
         self.done = False
 
@@ -87,13 +90,18 @@ class NOMA_Env(BaseEnv):
 
         self.done = False
 
-        self.states = torch.zeros(self.K * self.N, 2)
+        self.states = torch.zeros(self.K * self.N, 2).to(self.device)
 
-        self.info = {"n_steps": 0}
+        user_idx = np.random.randint(self.N)
+        channel_idx = np.random.randint(self.K)
+        random_action = user_idx + self.K * channel_idx
+        self.step(random_action)
+
+        self.info = {"n_steps": 1}
 
         return (self.states, self.info)
 
-    def step(self, action: tuple):
+    def step(self, action):
         """
         Run one step of the NOMA system (environment).
 
@@ -108,11 +116,12 @@ class NOMA_Env(BaseEnv):
         """
         self.info["n_steps"] += 1
 
-        user_idx, channel_idx = action
+        channel_idx = action // self.N
+        user_idx = action - channel_idx * self.N
         self.allocate_resources(channel_idx, user_idx)
 
         # States update
-        nk = channel_idx * self.K + user_idx
+        nk = channel_idx * self.N + user_idx
         self.states[nk][0] = self.user_info[user_idx]["distance"]
         self.states[nk][1] = self.user_info[user_idx]["CNR"]
 
@@ -124,7 +133,7 @@ class NOMA_Env(BaseEnv):
         return (self.states, reward, self.info, self.done)
 
     def clone(self):
-        return NOMA_Env(env_kwargs=self.env_kwargs)
+        return NOMA_Env(self.device_name, env_kwargs=self.env_kwargs)
 
     def allocate_resources(self, channel_idx, user_idx):
         if self.channel_info.get(channel_idx) is None:
@@ -165,19 +174,23 @@ class NOMA_Env(BaseEnv):
         self.user_info[user_idx]["power"] = power
 
     def get_power(self, channel_idx, metric: str = "MSR"):
-        la = self.find_msr_lambda(power=self.total_power)
         cnr0 = self.get_cnr(channel_idx, 0)
         cnr1 = self.get_cnr(channel_idx, 1)
-        A = self.get_A(channel_idx)
+        la = self.find_lambda(power=self.total_power, metric=self.metric)
+
         if metric == "MSR":
+            A = self.get_A(channel_idx)
             q_k = self.get_msr_power_budget(cnr0, cnr1, A, la)
             p_0 = (cnr1 * q_k - A + 1) / (A * cnr1)
             p_1 = q_k - p_0
-
             return (p_0, p_1)
-        # TODO:
         elif metric == "MMR":
-            return (-1, -1)
+            q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
+            p_0 = -(cnr0 + cnr1) + np.sqrt(
+                (cnr0 + cnr1) ** 2 + 4 * cnr0 * (cnr1) ** 2 * q_k
+            )
+            p_1 = q_k - p_0
+            return (p_0, p_1)
         else:
             raise KeyError("No such metric is available. Choose either `MMR` or `MSR`.")
 
@@ -188,9 +201,23 @@ class NOMA_Env(BaseEnv):
 
         return q_k
 
-    def find_msr_lambda(
-        self, power=12, start=-1e10, end=1e10, epsilon=1e-10, threshold=1e-5
+    def get_mmr_power_budget(self, cnr0, cnr1, la):
+        """Calculate q^k under MMR metric"""
+        z = self.get_Z(la)
+        q_k = (z * cnr1 + cnr0) * (z - 1) / (cnr0 * cnr1)
+
+        return q_k
+
+    def find_lambda(
+        self,
+        power=12,
+        start=-1e10,
+        end=1e10,
+        epsilon=1e-10,
+        threshold=1e-5,
+        metric: str = "MSR",
     ):
+        """Execute bisection method to find lagrangian coefficient"""
         while True:
             la = (start + end + epsilon) / 2
             sum_q_k = 0
@@ -198,7 +225,14 @@ class NOMA_Env(BaseEnv):
                 A = self.get_A(channel_idx)
                 cnr0 = self.get_cnr(channel_idx, 0)
                 cnr1 = self.get_cnr(channel_idx, 1)
-                q_k = self.get_msr_power_budget(cnr0, cnr1, A, la)
+                if metric == "MSR":
+                    q_k = self.get_msr_power_budget(cnr0, cnr1, A, la)
+                elif metric == "MMR":
+                    q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
+                else:
+                    raise KeyError(
+                        "No such metric is available. Choose either `MMR` or `MSR`."
+                    )
                 sum_q_k += q_k
 
             if np.abs(sum_q_k - power) < threshold or sum_q_k == power:
@@ -304,7 +338,7 @@ class NOMA_Env(BaseEnv):
                 "data_rate": float,
             }
         """
-        np.random.seed(seed)
+        # np.random.seed(seed)
         user_dict = {
             "user_idx": idx,
             "distance": np.random.randint(50, 300),
