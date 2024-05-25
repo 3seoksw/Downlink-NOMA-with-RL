@@ -15,7 +15,7 @@ class VectorEnv(Wrapper):
         print(f"VectorEnv: PyTorch device, {self.device} loaded")
 
     @override
-    def reset(self, seed: Optional[int]) -> tuple[VecType, list]:
+    def reset(self, seed: Optional[int] = None) -> tuple[VecType, list]:
         """Returns multiple reset data with the number of `num_envs`."""
         raise NotImplementedError
 
@@ -34,7 +34,7 @@ class VectorizedEnv(VectorEnv):
     def __init__(self, env: BaseEnv, num_envs: int):
         super().__init__(env, num_envs)
 
-    def reset(self, seed: Optional[int]):
+    def reset(self, seed: Optional[int] = None):
         states = []
         infos = []
         for env in self.envs:
