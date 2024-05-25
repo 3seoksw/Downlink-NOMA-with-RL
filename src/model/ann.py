@@ -12,11 +12,13 @@ class ANN(BaseModel):
         self, input_dim=2, hidden_dim=128, batch_size=64, num_users=40, num_channels=20
     ):
         super().__init__()
+        self.batch_size = batch_size
         self.N = num_users
         self.K = num_channels
-        self.prev_state = torch.zeros(batch_size, self.N * self.K, 2)
+        self.prev_state = torch.zeros(batch_size, self.N * self.K, input_dim)
         self.prev_state_idx = 0
         self.mask = torch.zeros(batch_size, self.N * self.K, dtype=torch.bool)
+        self.visited_states = torch.zeros(batch_size, self.N * self.K, dtype=torch.bool)
 
         # Pre-encoder
         self.pre_encoder_linear = nn.Linear(input_dim, hidden_dim)
@@ -42,7 +44,8 @@ class ANN(BaseModel):
         self.prev_state = input
 
         # Update masking
-        self.mask[batch_indices, state_indices] = True
+        self.visited_states[batch_indices, state_indices] = True
+        self.update_mask(batch_indices, state_indices)
 
         # Pre-encdoer
         pre_encoder = self.pre_encoder_linear(input)
@@ -72,37 +75,26 @@ class ANN(BaseModel):
 
         return compatibility
 
-    # WARN: Deprecated
-    def get_mask(self, input):
-        user_idx = input[:, :, 0]
-        channel_idx = input[:, :, 1]
-        values = channel_idx * self.N + user_idx
-        values = values.to(torch.int64)
+    def update_mask(self, batch_indices, state_indices):
+        channel_indices = state_indices // self.N
+        user_indices = state_indices % self.N
 
-        visited_states = torch.nonzero(input)
-        # visited_states = visited_states.any(dim=-1)
+        # User masking
+        for batch_idx, user_idx, channel_idx in zip(
+            batch_indices, user_indices, channel_indices
+        ):
+            channel_indices = torch.arange(self.K, device=self.mask.device)
+            state_indices = user_idx + channel_indices * self.N
+            self.mask[batch_idx, state_indices] = True
 
-        # Mask
-        mask = torch.ones(input.shape[0], self.N * self.K)
-        for i, batch in enumerate(values):
-            channel_counts = torch.zeros(self.K)
-            for n in batch:  # Traverse through history states and filter out
-                if n < 0:
-                    break
-                # History filter
-                mask[i][n] = 0
+        # Channel masking
+        state_matrix = self.prev_state.view(self.batch_size, self.K, self.N, -1)
+        assigned_counts = state_matrix.sum(dim=-1).bool().sum(dim=-1)
+        full_channels = (assigned_counts >= 2).nonzero(as_tuple=True)
+        for batch_idx, channel_idx in zip(*full_channels):
+            state_indices = (
+                torch.arange(self.N, device=self.mask.device) + channel_idx * self.N
+            )
+            self.mask[batch_idx, state_indices] = True
 
-                # User filter
-                channel_idx = n // self.N
-                user_idx = n - channel_idx * self.N
-                for j in range(self.K):
-                    mask[i][self.N * j + user_idx] = 0
-
-                # Channel filter
-                channel_counts[channel_idx] += 1
-                if channel_counts[channel_idx] >= 2:
-                    for j in range(self.N):
-                        mask[i][self.N * channel_idx + j] = 0
-
-        mask = mask.unsqueeze(-1)
-        return mask.bool()
+        self.mask[self.visited_states] = True
