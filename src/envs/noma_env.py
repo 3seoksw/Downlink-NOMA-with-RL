@@ -37,10 +37,10 @@ class NOMA_Env(BaseEnv):
 
         default_env_kwargs = {
             "batch_size": 40,
-            "num_users": 40,
-            "num_channels": 20,
+            "num_users": 8,
+            "num_channels": 4,
             "channels": [],
-            "B_tot": 5,
+            "B_tot": 5e6,
             "alpha": 2,
             "P_T": 12,
             "seed": 2024,
@@ -60,8 +60,8 @@ class NOMA_Env(BaseEnv):
         self.seed = self.env_kwargs["seed"]  # 2024
         self.channels = self.env_kwargs["channels"]
         self.noise = self.env_kwargs["N_0"]  # -170 dBm/Hz
-        self.channel_variance = (  # WARN: erase `/ self.K` if needed
-            self.bandwidth_total * self.noise / self.K
+        self.channel_variance = (
+            self.bandwidth_total * 10 ** (self.noise / 10) * 1e-3 / self.K
         )  # sigma_{z_k}^2
         self.min_data_rate = self.env_kwargs["min_data_rate"]  # 2 bps/Hz
         self.metric = self.env_kwargs["metric"]
@@ -130,13 +130,32 @@ class NOMA_Env(BaseEnv):
 
         if self.info["n_steps"] == self.N:
             self.done = True
+            self.allocate_power()
+            sum_rate = 0
+            for i in range(self.N):
+                sum_rate += self.user_info[i]["data_rate"]
+            print(sum_rate / 1e6)
+            # print(self.user_info)
 
         return (self.states, reward, self.info, self.done)
 
     def clone(self):
         return NOMA_Env(self.device_name, env_kwargs=self.env_kwargs)
 
+    def allocate_power(self):
+        """Allocate powers to all users and retrieve data rate"""
+        for k in range(self.K):
+            p_0, p_1 = self.get_power(k)
+            power = [p_0, p_1]
+            users = self.channel_info[k]
+            for i, (n, p) in enumerate(zip(users, power)):
+                self.set_power(n, p)
+                data_rate = self.get_data_rate(k, i)
+                self.set_data_rate(n, data_rate)
+
     def allocate_resources(self, channel_idx, user_idx):
+        channel_idx = int(channel_idx)
+        user_idx = int(user_idx)
         if self.channel_info.get(channel_idx) is None:
             self.channel_info[channel_idx] = []
             self.channel_info[channel_idx].append(user_idx)
@@ -159,33 +178,32 @@ class NOMA_Env(BaseEnv):
     def set_data_rate(self, user_idx, data_rate):
         self.user_info[user_idx]["data_rate"] = data_rate
 
-    def get_data_rate(self, channel_idx, n, metric):
-        power_0 = self.get_power(channel_idx, metric)
+    def get_data_rate(self, channel_idx, n):
+        power_0, power_1 = self.get_power(channel_idx)
         cnr_0 = self.get_cnr(channel_idx, 0)
-        channel = self.channel_bandwidth * channel_idx
+        channel = self.channel_bandwidth
 
         if n == 0:
             return channel * np.log2(1 + power_0 * cnr_0)
         else:  # n == 1
-            power_1 = self.get_power(channel_idx, metric)
             cnr_1 = self.get_cnr(channel_idx, 1)
             return channel * np.log2(1 + (power_1 * cnr_1) / (1 + power_0 * cnr_1))
 
     def set_power(self, user_idx, power):
         self.user_info[user_idx]["power"] = power
 
-    def get_power(self, channel_idx, metric: str = "MSR"):
+    def get_power(self, channel_idx):
         cnr0 = self.get_cnr(channel_idx, 0)
         cnr1 = self.get_cnr(channel_idx, 1)
         la = self.find_lambda(power=self.total_power, metric=self.metric)
 
-        if metric == "MSR":
+        if self.metric == "MSR":
             A = self.get_A(channel_idx)
             q_k = self.get_msr_power_budget(cnr0, cnr1, A, la)
             p_0 = (cnr1 * q_k - A + 1) / (A * cnr1)
             p_1 = q_k - p_0
             return (p_0, p_1)
-        elif metric == "MMR":
+        elif self.metric == "MMR":
             q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
             p_0 = -(cnr0 + cnr1) + np.sqrt(
                 (cnr0 + cnr1) ** 2 + 4 * cnr0 * (cnr1) ** 2 * q_k
