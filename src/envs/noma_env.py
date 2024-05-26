@@ -37,8 +37,9 @@ class NOMA_Env(BaseEnv):
 
         default_env_kwargs = {
             "batch_size": 40,
-            "num_users": 40,
-            "num_channels": 20,
+            "input_dim": 3,
+            "num_users": 10,
+            "num_channels": 5,
             "channels": [],
             "B_tot": 5e6,
             "alpha": 2,
@@ -51,6 +52,7 @@ class NOMA_Env(BaseEnv):
         self.env_kwargs = {**default_env_kwargs, **env_kwargs}
 
         self.batch_size = self.env_kwargs["batch_size"]  # 40
+        self.input_dim = self.env_kwargs["input_dim"]
         self.N = self.env_kwargs["num_users"]  # 40
         self.K = self.env_kwargs["num_channels"]  # 20
         self.bandwidth_total = self.env_kwargs["B_tot"]  # 5 MHz (5e6 Hz)
@@ -66,9 +68,11 @@ class NOMA_Env(BaseEnv):
         self.min_data_rate = self.env_kwargs["min_data_rate"]  # 2 bps/Hz
         self.metric = self.env_kwargs["metric"]
 
-        self.states = torch.zeros(self.K * self.N, 2).to(self.device)
+        self.states = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
         self.info = {"n_steps": 0}  # TODO: which keys to be inserted
         self.done = False
+        self.prev_step = 0
+        self.prev_user = 0
 
         # key: channel_idx, value: list[(user_idx0, cnr0), (user_idx1, cnr1)]
         self.channel_info = {}
@@ -91,11 +95,13 @@ class NOMA_Env(BaseEnv):
 
         self.done = False
 
-        self.states = torch.zeros(self.K * self.N, 2).to(self.device)
+        self.states = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
 
         user_idx = np.random.randint(self.N)
         channel_idx = np.random.randint(self.K)
         random_action = user_idx + self.K * channel_idx
+        self.prev_step = random_action
+        self.prev_user = user_idx
         self.step(random_action)
 
         self.info = {"n_steps": 1}
@@ -115,16 +121,19 @@ class NOMA_Env(BaseEnv):
             Say the user's index as `n` and channel's index as `k`.
             Then states will be updated as `self.states[N * k + n] = 1`.
         """
+        # self.states[self.prev_step] = self.user_info[self.prev_user]["data_rate"]
         self.info["n_steps"] += 1
 
         channel_idx = action // self.N
-        user_idx = action - channel_idx * self.N
+        user_idx = action % self.N
         self.allocate_resources(channel_idx, user_idx)
 
         # States update
         nk = channel_idx * self.N + user_idx
+        nk = action
         self.states[nk][0] = self.user_info[user_idx]["distance"]
         self.states[nk][1] = self.user_info[user_idx]["CNR"]
+        self.states[nk][2] = 1
 
         reward = self.user_info[user_idx]["data_rate"]
 
@@ -134,7 +143,7 @@ class NOMA_Env(BaseEnv):
             if self.metric == "MSR":
                 sum_rate = 0
                 for i in range(self.N):
-                    sum_rate += self.user_info[i]["data_rate"]
+                    sum_rate = sum_rate + self.user_info[i]["data_rate"]
                 reward = sum_rate / 1e6
             elif self.metric == "MMR":
                 min_data_rate = self.user_info[0]["data_rate"]
