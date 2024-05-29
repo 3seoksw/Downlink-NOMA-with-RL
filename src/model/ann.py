@@ -34,6 +34,7 @@ class ANN(nn.Module):
 
         # Pre-encoder
         self.pre_encoder_linear = nn.Linear(input_dim, hidden_dim)
+        # self.temp_linear = nn.Linear()
 
         # Encoder (applied the Transformer's structure)
         encoder_layer = nn.TransformerEncoderLayer(
@@ -79,12 +80,13 @@ class ANN(nn.Module):
         last_embedding = embedding[batch_indices, state_indices, :]
 
         # Pre-decoder
-        state_combine = torch.mean(embedding, dim=1)
+        state_combine = torch.sum(embedding, dim=1)
         concat = torch.cat((state_combine, last_embedding), dim=1)
         concat = concat.unsqueeze(1)  # (batch, 1, hidden * 2)
 
         # Decoder
         decoder_general_state = self.decoder_combined(concat)  # Q = (1, d^e)
+        # decoder_general_state = decoder_general_state.unsqueeze(0)
         decoder_states = self.decoder_linear(embedding)  # K = (NK, d^e)
 
         decoder_mul = torch.matmul(
@@ -96,7 +98,7 @@ class ANN(nn.Module):
 
         if self.method == "Q-Learning":
             masked = self.linear(decoder_mul)
-            output = masked.masked_fill(mask, float("-inf"))
+            output = masked.masked_fill(mask, -100)
         elif self.method == "Policy Gradient":
             masked = decoder_mul.masked_fill(mask, float("-inf"))
             output = nn.functional.softmax(masked, dim=1)
