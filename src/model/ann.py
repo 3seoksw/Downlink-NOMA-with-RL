@@ -127,7 +127,8 @@ class ANN(nn.Module):
             mask[batch_idx, state_indices] = True
 
         # Channel masking
-        state_matrix = state.view(batch_size, self.K, self.N, -1)
+        state_status = state[:, :, 2]
+        state_matrix = state_status.view(batch_size, self.K, self.N, -1)
         assigned_counts = state_matrix.sum(dim=-1).bool().sum(dim=-1)
         full_channels = (assigned_counts >= 2).nonzero(as_tuple=True)
         for batch_idx, channel_idx in zip(*full_channels):
