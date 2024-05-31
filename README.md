@@ -45,8 +45,8 @@ python src/train.py
 - [ ] Linear model
 - [ ] CNN model
 - [ ] Environment
-- [ ] Base Station
-- [ ] User
+- [x] Vectorized Env
+- [ ] Trainer
 
 <a id="1" href="https://ieeexplore.ieee.org/abstract/document/8790780">[1]</a>
 He, Chaofan, Yang Hu, Yan Chen, and Bing Zeng. "Joint power allocation and channel assignment for NOMA with deep reinforcement learning."
