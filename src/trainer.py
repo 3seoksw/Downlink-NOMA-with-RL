@@ -23,12 +23,12 @@ def train(cfg):
         num_channels=cfg.num_channels,
         device=device,
     )
-    # model = CNN(
-    #     num_features=3,
-    #     num_users=cfg.num_users,
-    #     num_channels=cfg.num_channels,
-    #     device=device,
-    # )
+    model = CNN(
+        num_features=3,
+        num_users=cfg.num_users,
+        num_channels=cfg.num_channels,
+        device=device,
+    )
 
     trainer = Trainer(
         env=env,

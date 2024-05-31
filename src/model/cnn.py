@@ -11,14 +11,14 @@ class CNN(nn.Module):
         self.device = device
 
         self.net = nn.Sequential(
-            nn.Conv1d(in_channels=state_size, out_channels=64, kernel_size=3, stride=1, padding=1),
+            nn.Conv1d(in_channels=state_size, out_channels=128, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.Conv1d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
+            nn.Conv1d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.Conv1d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1),
+            nn.Conv1d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(64 * 3, 64 * 3),
+            nn.Linear(128* 3, 64 * 3),
             nn.ReLU(),
             nn.Linear(64 * 3, state_size),
         )
