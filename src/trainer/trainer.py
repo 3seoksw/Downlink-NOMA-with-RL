@@ -92,12 +92,11 @@ class Trainer:
             if episode % self.sync_every == 0:
                 self.sync_networks()
 
-            (prev_state, state), _ = self.env.reset()
-            prev_state = prev_state.unsqueeze(0)
+            state, _ = self.env.reset()
             state = state.unsqueeze(0)
 
             history = []
-            for _ in range(self.N - 1):
+            for _ in range(self.N):
                 out = self.online_model(state)
 
                 # NOTE: Action (with `Online` network)
@@ -118,12 +117,11 @@ class Trainer:
 
                 # Action
                 # (prev_state, state), reward, info, _ = self.env.step(action)
-                (cur_state, next_state), reward, info, done = self.env.step(action)
+                next_state, reward, info, done = self.env.step(action)
                 history.append(
                     [
-                        prev_state.clone(),
-                        cur_state.clone(),
-                        next_state.clone(),
+                        state,
+                        next_state,
                         torch.tensor([action]),
                         torch.tensor([done]),
                     ]
@@ -186,9 +184,53 @@ class Trainer:
     def fit(self):
         episodes = tqdm(range(self.num_episodes))
         for episode in episodes:
-            state, _ = self.env.reset()
+            state, info = self.env.reset()
+            state = state.unsqueeze(0)
 
-            action = self.action_selection(state)
+            history = []
+            loss = None
+            for step in range(self.N):
+                if self.buffer.get_len() >= 1e3:
+                    loss = self.learn()
+
+                action = self.action_selection(state)
+
+                next_state, _, info, done = self.env.step(action)
+                history.append(
+                    [
+                        state,
+                        next_state,
+                        torch.tensor([action]),
+                        torch.tensor([done]),
+                    ]
+                )
+                state = next_state.unsqueeze(0)
+
+            sum_rate = 0
+            for i, idx in enumerate(info["usr_idx_history"]):
+                usr_info = info["user_info"][idx]
+                data_rate = usr_info["data_rate"] / 1e6
+                data_rate = torch.tensor([data_rate], dtype=torch.float32)
+                sum_rate = sum_rate + data_rate
+
+                history[i].append(data_rate)
+                m_state = history[i][0]
+                m_next_state = history[i][1]
+                m_action = history[i][2]
+                m_done = history[i][3]
+                m_reward = history[i][4]
+                self.buffer.save_into_memory(
+                    m_state, m_next_state, m_action, m_done, m_reward
+                )
+
+            if episode % self.sync_every == 0:
+                self.sync_networks()
+            if episode % 10 == 0 and self.buffer.get_len() >= 1e3:
+                if loss is None:
+                    exit()
+                print(f"EP: {episode}: {loss}, {sum_rate}")
+                self.logger.log_step(value=loss, log="loss")
+                self.logger.log_step(value=sum_rate, log="sum_rate")
 
     def action_selection(self, state):
         action_space = self.online_model(state)
@@ -208,6 +250,26 @@ class Trainer:
         self.epsilon = max(self.epsilon_min, self.epsilon)
 
         return action
+
+    def learn(self):
+        state, next_state, action, done, reward = self.buffer.sample_from_memory()
+        td_estimate = self.td_estimate(state, action)
+        td_target = self.td_target(reward, next_state, done)
+
+        loss = self.loss_func(td_estimate, td_target)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        return loss.item()
+
+    def calculate_actual_sum_rate(self, info: dict):
+        sum_rate = 0
+        for i, idx in enumerate(info["usr_idx_history"]):
+            usr_info = info["user_info"][idx]
+            data_rate = usr_info["data_rate"] / 1e6
+            data_rate = torch.tensor([data_rate], dtype=torch.float32)
+            sum_rate = sum_rate + data_rate
 
     def train(self):
         T_s = 5  # training stopping criterion
@@ -310,12 +372,12 @@ class Trainer:
 
         return prob
 
-    def td_estimate(self, prev_state, state, action):
+    def td_estimate(self, state, action):
         action = action.squeeze()
         return self.online_model(state)[torch.arange(0, self.batch_size), action]
 
     @torch.no_grad()
-    def td_target(self, reward, state, next_state, done):
+    def td_target(self, reward, next_state, done):
         done = done.to(self.device).squeeze(1)
         next_state_reward = self.target_model(next_state)
         pred_reward, action = torch.max(next_state_reward, dim=1)

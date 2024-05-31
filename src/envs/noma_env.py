@@ -65,16 +65,13 @@ class NOMA_Env(BaseEnv):
         self.metric = metric
 
         self.states = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
-        self.info = {"n_steps": 0}  # TODO: which keys to be inserted
+        self.info = {"n_steps": 0, "usr_idx_history": [], "user_info": []}
         self.done = False
         self.prev_step = 0
         self.prev_user = 0
 
         # key: channel_idx, value: list[(user_idx0, cnr0), (user_idx1, cnr1)]
         self.channel_info = {}
-
-        self.prev_state = None
-        self.history = []
 
         # NOTE: See `_generate_user()` for more information
         self.user_info = []
@@ -91,32 +88,32 @@ class NOMA_Env(BaseEnv):
             self.user_info.append(user_dict)
 
         self.channel_info = {}
-        self.info = {"n_steps": 0, "usr_idx_history": []}
+        self.info = {"n_steps": 0, "usr_idx_history": [], "user_info": []}
 
         self.done = False
 
         self.states = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
 
         for nk in range(self.N * self.K):
-            channel_idx = nk // self.N
+            # channel_idx = nk // self.N
             user_idx = nk % self.N
             self.states[nk, 0] = self.user_info[user_idx]["distance"]
             cnr = self.get_cnr_by_usr(user_idx)
             self.user_info[user_idx]["CNR"] = cnr
             self.states[nk, 1] = cnr
 
-        self.prev_state = self.states.clone()
-        prev = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
+        # self.prev_state = self.states.clone()
+        # prev = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
 
-        user_idx = np.random.randint(self.N)
-        channel_idx = np.random.randint(self.K)
-        random_action = user_idx + self.N * channel_idx
-        self.prev_step = random_action
-        self.prev_user = user_idx
-        self.step(random_action)
+        # user_idx = np.random.randint(self.N)
+        # channel_idx = np.random.randint(self.K)
+        # random_action = user_idx + self.N * channel_idx
+        # self.prev_step = random_action
+        # self.prev_user = user_idx
+        # self.step(random_action)
 
-        states = (prev, self.states)
-        return (states, self.info)
+        # states = (prev, self.states)
+        return self.states.clone(), self.info
 
     def step(self, action):
         """
@@ -143,15 +140,13 @@ class NOMA_Env(BaseEnv):
         self.info["usr_idx_history"].append(user_idx)
 
         # States update
-        nk = channel_idx * self.N + user_idx
+        # nk = channel_idx * self.N + user_idx
         nk = action
         # self.states[nk, 0] = self.user_info[user_idx]["distance"]
         # self.states[nk, 1] = self.user_info[user_idx]["CNR"]
         self.states[nk, 2] = 1
 
-        self.history.append([self.prev_state, self.states.clone()])
-        history_idx = self.history.__len__()
-        self.user_info[user_idx]["history_idx"] = history_idx
+        curr_state = self.states.clone()
 
         reward = self.user_info[user_idx]["data_rate"]
 
@@ -162,13 +157,9 @@ class NOMA_Env(BaseEnv):
                 sum_rate = 0
                 for i in range(self.N):
                     data_rate = self.user_info[i]["data_rate"] / 1e6
-
-                    history_idx = self.user_info[i]["history_idx"]
-                    self.history[i].append(data_rate)
                     sum_rate = sum_rate + data_rate
                 reward = sum_rate
                 self.info["user_info"] = self.user_info
-                # self.info = self.history
             elif self.metric == "MMR":
                 min_data_rate = self.user_info[0]["data_rate"]
                 for i in range(self.N):
@@ -176,10 +167,10 @@ class NOMA_Env(BaseEnv):
                     min_data_rate = min(min_data_rate, data_rate)
                 reward = min_data_rate / 1e6
 
-        states = (self.prev_state, self.states)
-        self.prev_state = self.states.clone()
+        # states = (self.prev_state, self.states)
+        # self.prev_state = self.states.clone()
 
-        return (states, reward, self.info, self.done)
+        return (curr_state, reward, self.info, self.done)
 
     def clone(self):
         return NOMA_Env(self.device_name, env_kwargs=self.env_kwargs)
