@@ -66,7 +66,9 @@ class Trainer:
         self.loss_func = torch.nn.MSELoss()
 
         if accelerator not in ["cpu", "mps", "gpu", "cuda"]:
-            raise Exception("`accelerator` should be either 'cpu', 'mps', 'cuda', or 'gpu'.")
+            raise Exception(
+                "`accelerator` should be either 'cpu', 'mps', 'cuda', or 'gpu'."
+            )
         elif accelerator == "gpu" or accelerator == "cuda":
             if torch.cuda.is_available():
                 self.device = torch.device("cuda")
@@ -96,7 +98,7 @@ class Trainer:
 
             history = []
             for _ in range(self.N - 1):
-                out = self.online_model(prev_state, state)
+                out = self.online_model(state)
 
                 # NOTE: Action (with `Online` network)
                 valid_actions_mask = out != float("-inf")
@@ -117,17 +119,30 @@ class Trainer:
                 # Action
                 # (prev_state, state), reward, info, _ = self.env.step(action)
                 (cur_state, next_state), reward, info, done = self.env.step(action)
-                history.append([prev_state.clone(), cur_state.clone(), next_state.clone(), torch.tensor([action]), torch.tensor([done])])
+                history.append(
+                    [
+                        prev_state.clone(),
+                        cur_state.clone(),
+                        next_state.clone(),
+                        torch.tensor([action]),
+                        torch.tensor([done]),
+                    ]
+                )
 
                 prev_state = cur_state.unsqueeze(0)
                 state = next_state.unsqueeze(0)
 
                 # NOTE: Learn
                 if self.buffer.get_len() >= 1e2:
-                    m_prev_state, m_state, m_next_state, m_action, m_done, m_reward = self.buffer.sample_from_memory()
+                    m_prev_state, m_state, m_next_state, m_action, m_done, m_reward = (
+                        self.buffer.sample_from_memory()
+                    )
+
                     m_reward = m_reward.squeeze(1).to(self.device)
                     expected_reward = self.td_estimate(m_prev_state, m_state, m_action)
-                    target_reward = self.td_target(m_reward, m_state, m_next_state, m_done)
+                    target_reward = self.td_target(
+                        m_reward, m_state, m_next_state, m_done
+                    )
 
                     # loss = self.loss_func(expected_reward, m_reward)
                     loss = self.loss_func(expected_reward, target_reward)
@@ -153,7 +168,9 @@ class Trainer:
                 m_action = history[i - 1][3]
                 m_done = history[i - 1][4]
                 m_reward = history[i - 1][5]
-                self.buffer.save_into_memory(m_prev_state, m_state, m_next_state, m_action, m_done, m_reward)
+                self.buffer.save_into_memory(
+                    m_prev_state, m_state, m_next_state, m_action, m_done, m_reward
+                )
 
             sum_rate = 0
             for i, info in enumerate(info["user_info"]):
@@ -165,7 +182,33 @@ class Trainer:
 
         plt.plot(sum)
         plt.show()
-                    
+
+    def fit(self):
+        episodes = tqdm(range(self.num_episodes))
+        for episode in episodes:
+            state, _ = self.env.reset()
+
+            action = self.action_selection(state)
+
+    def action_selection(self, state):
+        action_space = self.online_model(state)
+
+        valid_actions_mask = action_space != float("-inf")
+        valid_actions_mask = valid_actions_mask.view(-1)
+        valid_indices = torch.nonzero(valid_actions_mask)
+
+        # Exploration
+        if torch.rand(1) < self.epsilon:
+            action = random.choice(valid_indices)
+        # Exploitation
+        else:
+            pred_reward, action = torch.max(action_space, dim=1)
+
+        self.epsilon = self.epsilon * self.epsilon_decay
+        self.epsilon = max(self.epsilon_min, self.epsilon)
+
+        return action
+
     def train(self):
         T_s = 5  # training stopping criterion
         outperform_count = 0  # when the model outperforms the baseline model, +1
@@ -269,16 +312,18 @@ class Trainer:
 
     def td_estimate(self, prev_state, state, action):
         action = action.squeeze()
-        return self.online_model(prev_state, state)[torch.arange(0, self.batch_size), action]
+        return self.online_model(state)[torch.arange(0, self.batch_size), action]
 
     @torch.no_grad()
     def td_target(self, reward, state, next_state, done):
         done = done.to(self.device).squeeze(1)
-        next_state_reward = self.target_model(state, next_state)
+        next_state_reward = self.target_model(next_state)
         pred_reward, action = torch.max(next_state_reward, dim=1)
         # next_reward = self.online_model(state, next_state)
 
-        next_reward = self.online_model(state, next_state)[torch.arange(0, self.batch_size), action]
+        next_reward = self.online_model(next_state)[
+            torch.arange(0, self.batch_size), action
+        ]
         next_reward = torch.where(done, torch.tensor(0), next_reward)
         val = reward + next_reward
         return val
@@ -318,4 +363,3 @@ class Trainer:
 
             print(f"EP {episode}: {sum_rate}")
         exit()
-

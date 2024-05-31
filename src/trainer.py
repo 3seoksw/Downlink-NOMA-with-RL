@@ -10,10 +10,18 @@ from trainer.trainer import Trainer
 
 @hydra.main(version_base=None, config_path="../config", config_name="train")
 def train(cfg):
-    device = "cuda"
+    device = "cpu"
 
-    env = NOMA_Env(device)
-    env_bl = NOMA_Env(device)
+    env = NOMA_Env(
+        num_users=cfg.num_users,
+        num_channels=cfg.num_channels,
+        device=device,
+    )
+    env_bl = NOMA_Env(
+        num_users=cfg.num_users,
+        num_channels=cfg.num_channels,
+        device=device,
+    )
 
     model = ANN(
         input_dim=cfg.input_dim,
