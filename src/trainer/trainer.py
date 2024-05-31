@@ -43,11 +43,13 @@ class Trainer:
 
         # Testing objects
         self.env = env
-        self.model = model  # act randomly based on the given distribution
+        self.online_model = model  # act randomly based on the given distribution
+        self.target_model = copy.deepcopy(self.online_model)
+        self.sync_every = 1e2
 
         # Baseline objects
         self.env_bl = env_bl
-        self.model_bl = copy.deepcopy(self.model)  # act greedily
+        # self.model_bl = copy.deepcopy(self.model)  # act greedily
 
         self.metric = metric  # "MSR" or "MMR"
         self.logger = Logger(save_dir=save_dir, save_every=save_every)
@@ -57,8 +59,10 @@ class Trainer:
         self.num_tests = num_tests
         self.loss_threshold = loss_threshold
         self.epsilon = epsilon
+        self.epsilon_min = 0.01
+        self.epsilon_decay = 0.9999975
 
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-5)
+        self.optimizer = torch.optim.Adam(self.online_model.parameters(), lr=1e-5)
         self.loss_func = torch.nn.MSELoss()
 
         if accelerator not in ["cpu", "mps", "gpu", "cuda"]:
@@ -76,55 +80,61 @@ class Trainer:
         else:  # accelerator == "cpu"
             self.device = torch.device("cpu")
 
-        self.model.to(self.device)
+        self.online_model.to(self.device)
+        self.target_model.to(self.device)
 
     def train_test(self):
+        sum = []
         episodes = tqdm(range(self.num_episodes))
         for episode in episodes:
+            if episode % self.sync_every == 0:
+                self.sync_networks()
+
             (prev_state, state), _ = self.env.reset()
             prev_state = prev_state.unsqueeze(0)
             state = state.unsqueeze(0)
 
-            # steps = tqdm(
-            #     range(self.N - 1),
-            #     desc="Training model",
-            #     bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
-            # )
-            steps = range(self.N - 1)
             history = []
-            for _ in steps:
-                out = self.model(prev_state, state)
+            for _ in range(self.N - 1):
+                out = self.online_model(prev_state, state)
 
-                # NOTE: Greedy Action
-                pred_reward, action = torch.max(out, dim=1)
+                # NOTE: Action (with `Online` network)
+                valid_actions_mask = out != float("-inf")
+                valid_actions_mask = valid_actions_mask.view(-1)
+                valid_indices = torch.nonzero(valid_actions_mask)
 
-                history.append([prev_state.clone(), state.clone(), torch.tensor([action])])
+                # Exploration
+                if torch.rand(1) < self.epsilon:
+                    action = random.choice(valid_indices)
+                # Exploitation
+                else:
+                    pred_reward, action = torch.max(out, dim=1)
+                self.epsilon = self.epsilon * self.epsilon_decay
+                self.epsilon = max(self.epsilon_min, self.epsilon)
 
-                # Real Action
-                (prev_state, state), reward, info, _ = self.env.step(action)
-                prev_state = prev_state.unsqueeze(0)
-                state = state.unsqueeze(0)
+                # history.append([prev_state.clone(), state.clone(), torch.tensor([action])])
+
+                # Action
+                # (prev_state, state), reward, info, _ = self.env.step(action)
+                (cur_state, next_state), reward, info, done = self.env.step(action)
+                history.append([prev_state.clone(), cur_state.clone(), next_state.clone(), torch.tensor([action]), torch.tensor([done])])
+
+                prev_state = cur_state.unsqueeze(0)
+                state = next_state.unsqueeze(0)
 
                 # NOTE: Learn
                 if self.buffer.get_len() >= 1e2:
-                    m_prev_state, m_state, m_action, m_reward = self.buffer.sample_from_memory()
-                    expected_reward = self.estimate(m_prev_state, m_state, m_action)
+                    m_prev_state, m_state, m_next_state, m_action, m_done, m_reward = self.buffer.sample_from_memory()
                     m_reward = m_reward.squeeze(1).to(self.device)
-                    loss = self.loss_func(expected_reward, m_reward)
-                    # print(loss)
+                    expected_reward = self.td_estimate(m_prev_state, m_state, m_action)
+                    target_reward = self.td_target(m_reward, m_state, m_next_state, m_done)
+
+                    # loss = self.loss_func(expected_reward, m_reward)
+                    loss = self.loss_func(expected_reward, target_reward)
 
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
-
-                    # count = 0
-                    # for n, p in self.model.named_parameters():
-                    #     count += 1
-                    #     if torch.isnan(p).any():
-                    #         print(n, count)
-
-                    # print(count)
-                    # exit()
 
             sum_rate = 0
             for i, idx in enumerate(info["usr_idx_history"]):
@@ -135,109 +145,27 @@ class Trainer:
                 if i == 0:
                     continue
 
-                print(idx.item(), usr_info["channel"], data_rate, usr_info["power"], usr_info["distance"], usr_info["CNR"])
-                history[i - 1].append(sum_rate)
+                # print(idx.item(), usr_info["channel"], data_rate, usr_info["power"], usr_info["distance"], usr_info["CNR"])
+                history[i - 1].append(data_rate)
                 m_prev_state = history[i - 1][0]
                 m_state = history[i - 1][1]
-                m_action = history[i - 1][2]
-                m_reward = history[i - 1][3]
-                self.buffer.save_into_memory(m_prev_state, m_state, m_action, m_reward)
+                m_next_state = history[i - 1][2]
+                m_action = history[i - 1][3]
+                m_done = history[i - 1][4]
+                m_reward = history[i - 1][5]
+                self.buffer.save_into_memory(m_prev_state, m_state, m_next_state, m_action, m_done, m_reward)
 
             sum_rate = 0
             for i, info in enumerate(info["user_info"]):
                 data_rate = info["data_rate"] / 1e6
                 sum_rate = sum_rate + data_rate
             if episode % 100 == 0 and self.buffer.get_len() >= 1e2:
+                sum.append(sum_rate)
                 print(f"EP {episode}: {loss}, {sum_rate}")
-                    
 
-    def fit(self):
-        log_losses = []
-        log_rewards = []
-        for episode in range(self.num_episodes):
-            state, _ = self.env.reset()
-            loss_reward = torch.zeros(state.shape[0], 1)
-            self.online_model._reset()
-
-            pred_rewards = []
-            steps = tqdm(
-                range(self.N - 1),
-                desc="Testing model",
-                bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
-            )
-            for _ in steps:
-                out = self.online_model(state)
-
-                # NOTE: Action (with `Online` network)
-                # valid_actions_mask = out != float("-inf")
-                # valid_actions_mask = valid_actions_mask.view(-1)
-                # valid_indices = torch.nonzero(valid_actions_mask)
-
-                # if torch.rand(1) < self.epsilon:
-                #     action = random.choice(valid_indices)
-                #     print(out, action)
-                #     pred_reward = out[action]
-                # else:
-                #     pred_reward, action = torch.max(out, dim=1)
-
-                # print(pred_reward, action)
-
-                # NOTE: Greedy Action
-                pred_reward, action = torch.max(out, dim=1)
-                pred_rewards.append(pred_reward)
-
-                # Real Action
-                next_state, reward, info, _ = self.env.step(action)
-                state = next_state
-
-                # NOTE: Learn
-                if self.buffer.get_len() >= 1e3:
-                    state, next_state, action, reward = self.buffer.sample_from_memory()
-                    expected_reward = self.estimate(state, action)
-                    loss = self.loss_func(expected_reward, reward)
-
-                    print(f"EP {episode}: {loss}, {reward}")
-                    
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
-
-            for i in range(self.N):
-                states = torch.stack([info[b][i][0] for b in range(self.batch_size)])
-                next_states = torch.stack([info[b][i][1] for b in range(self.batch_size)])
-                actions = torch.tensor([info[b][i][2] for b in range(self.batch_size)])
-                rewards = torch.tensor([info[b][i][3] for b in range(self.batch_size)])
-                self.buffer.save_into_memory(states, next_states, actions, rewards)
-
-            # loss_reward = reward.float()
-            # loss_reward.to(self.device)
-            # log_reward = loss_reward.clone().sum().detach().numpy() / 40
-            # log_rewards.append(log_reward)
-            # 
-
-            # pred_rewards = torch.stack(pred_rewards)
-            # if self.metric == "MSR":
-            #     pred_loss_reward = torch.sum(pred_rewards, dim=0).to(self.device)
-            # elif self.metric == "MMR":
-            #     pred_loss_reward = torch.min(pred_rewards, dim=0)
-            # else:
-            #     raise KeyError()
-
-            # loss = self.loss_func(pred_loss_reward, loss_reward)
-            # log_loss = loss.clone().detach().numpy()
-            # log_losses.append(log_loss)
-            # # self.logger.log_step(loss)
-
-            # print(f"EP {episode}: {loss}, {log_reward}")
-            # self.optimizer.zero_grad()
-            # loss.backward()
-            # self.optimizer.step()
-
-        plt.plot(log_rewards, "red")
+        plt.plot(sum)
         plt.show()
-        plt.plot(log_losses, "blue")
-        plt.show()
-
+                    
     def train(self):
         T_s = 5  # training stopping criterion
         outperform_count = 0  # when the model outperforms the baseline model, +1
@@ -339,13 +267,24 @@ class Trainer:
 
         return prob
 
-    def estimate(self, prev_state, state, action):
+    def td_estimate(self, prev_state, state, action):
         action = action.squeeze()
-        return self.model(prev_state, state)[torch.arange(0, self.batch_size), action]
+        return self.online_model(prev_state, state)[torch.arange(0, self.batch_size), action]
 
     @torch.no_grad()
-    def target(self, state):
-        self.target_model(state)
+    def td_target(self, reward, state, next_state, done):
+        done = done.to(self.device).squeeze(1)
+        next_state_reward = self.target_model(state, next_state)
+        pred_reward, action = torch.max(next_state_reward, dim=1)
+        # next_reward = self.online_model(state, next_state)
+
+        next_reward = self.online_model(state, next_state)[torch.arange(0, self.batch_size), action]
+        next_reward = torch.where(done, torch.tensor(0), next_reward)
+        val = reward + next_reward
+        return val
+
+    def sync_networks(self):
+        self.target_model.load_state_dict(self.online_model.state_dict())
 
     def test(self):
         """Run testing process"""
