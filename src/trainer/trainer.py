@@ -127,19 +127,18 @@ class Trainer:
                     ]
                 )
 
-                prev_state = cur_state.unsqueeze(0)
                 state = next_state.unsqueeze(0)
 
                 # NOTE: Learn
                 if self.buffer.get_len() >= 1e2:
-                    m_prev_state, m_state, m_next_state, m_action, m_done, m_reward = (
+                    m_state, m_next_state, m_action, m_done, m_reward = (
                         self.buffer.sample_from_memory()
                     )
 
                     m_reward = m_reward.squeeze(1).to(self.device)
-                    expected_reward = self.td_estimate(m_prev_state, m_state, m_action)
+                    expected_reward = self.td_estimate(m_state, m_action)
                     target_reward = self.td_target(
-                        m_reward, m_state, m_next_state, m_done
+                        m_reward, m_next_state, m_done
                     )
 
                     # loss = self.loss_func(expected_reward, m_reward)
@@ -155,25 +154,18 @@ class Trainer:
                 data_rate = usr_info["data_rate"] / 1e6
                 data_rate = torch.tensor([data_rate], dtype=torch.float32)
                 sum_rate = sum_rate + data_rate
-                if i == 0:
-                    continue
 
                 # print(idx.item(), usr_info["channel"], data_rate, usr_info["power"], usr_info["distance"], usr_info["CNR"])
-                history[i - 1].append(data_rate)
-                m_prev_state = history[i - 1][0]
-                m_state = history[i - 1][1]
-                m_next_state = history[i - 1][2]
-                m_action = history[i - 1][3]
-                m_done = history[i - 1][4]
-                m_reward = history[i - 1][5]
+                history[i].append(data_rate)
+                m_state = history[i][0]
+                m_next_state = history[i][1]
+                m_action = history[i ][2]
+                m_done = history[i][3]
+                m_reward = history[i][4]
                 self.buffer.save_into_memory(
-                    m_prev_state, m_state, m_next_state, m_action, m_done, m_reward
+                    m_state, m_next_state, m_action, m_done, m_reward
                 )
 
-            sum_rate = 0
-            for i, info in enumerate(info["user_info"]):
-                data_rate = info["data_rate"] / 1e6
-                sum_rate = sum_rate + data_rate
             if episode % 100 == 0 and self.buffer.get_len() >= 1e2:
                 sum.append(sum_rate)
                 print(f"EP {episode}: {loss}, {sum_rate}")
