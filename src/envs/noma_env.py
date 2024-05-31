@@ -32,42 +32,37 @@ class NOMA_Env(BaseEnv):
     The action is in the form of `(user_index, channel_index)`.
     """
 
-    def __init__(self, device: str, **env_kwargs):
+    def __init__(
+        self,
+        input_dim: int = 3,
+        num_users: int = 10,
+        num_channels: int = 5,
+        B_tot: float = 5e6,
+        alpha: int = 2,
+        P_T: int = 12,
+        seed: Optional[float] = None,
+        N_0: int = -170,
+        min_data_rate: int = 2,
+        metric: str = "MSR",
+        device: str = "cpu",
+    ):
         super().__init__(device)
+
         self.device_name = device
-
-        default_env_kwargs = {
-            "batch_size": 1,
-            "input_dim": 3,
-            "num_users": 10,
-            "num_channels": 5,
-            "channels": [],
-            "B_tot": 5e6,
-            "alpha": 2,
-            "P_T": 12,
-            "seed": 2024,
-            "N_0": -170,
-            "min_data_rate": 6,
-            "metric": "MSR",
-        }
-        self.env_kwargs = {**default_env_kwargs, **env_kwargs}
-
-        self.batch_size = self.env_kwargs["batch_size"]  # 40
-        self.input_dim = self.env_kwargs["input_dim"]
-        self.N = self.env_kwargs["num_users"]  # 40
-        self.K = self.env_kwargs["num_channels"]  # 20
-        self.bandwidth_total = self.env_kwargs["B_tot"]  # 5 MHz (5e6 Hz)
+        self.input_dim = input_dim
+        self.N = num_users  # 40
+        self.K = num_channels  # 20
+        self.bandwidth_total = B_tot  # 5 MHz (5e6 Hz)
         self.channel_bandwidth = self.bandwidth_total / self.K  # 2,500,000 Hz
-        self.alpha = self.env_kwargs["alpha"]  # path loss coefficient (alpha=2)
-        self.total_power = self.env_kwargs["P_T"]  # 2 ~ 12 Watt
-        self.seed = self.env_kwargs["seed"]  # 2024
-        self.channels = self.env_kwargs["channels"]
-        self.noise = self.env_kwargs["N_0"]  # -170 dBm/Hz
+        self.alpha = alpha  # path loss coefficient (alpha=2)
+        self.total_power = P_T  # 2 ~ 12 Watt
+        self.seed = seed  # 2024
+        self.noise = N_0  # -170 dBm/Hz
         self.channel_variance = (
             self.bandwidth_total * 10 ** (self.noise / 10) * 1e-3 / self.K
         )  # sigma_{z_k}^2
-        self.min_data_rate = self.env_kwargs["min_data_rate"]  # 2 bps/Hz
-        self.metric = self.env_kwargs["metric"]
+        self.min_data_rate = min_data_rate  # 2 bps/Hz
+        self.metric = metric
 
         self.states = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
         self.info = {"n_steps": 0}  # TODO: which keys to be inserted
@@ -120,7 +115,6 @@ class NOMA_Env(BaseEnv):
         self.prev_user = user_idx
         self.step(random_action)
 
-
         states = (prev, self.states)
         return (states, self.info)
 
@@ -168,7 +162,7 @@ class NOMA_Env(BaseEnv):
                 sum_rate = 0
                 for i in range(self.N):
                     data_rate = self.user_info[i]["data_rate"] / 1e6
-                    
+
                     history_idx = self.user_info[i]["history_idx"]
                     self.history[i].append(data_rate)
                     sum_rate = sum_rate + data_rate
