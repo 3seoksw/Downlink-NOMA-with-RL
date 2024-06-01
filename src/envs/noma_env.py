@@ -166,7 +166,7 @@ class NOMA_Env(BaseEnv):
                     data_rate = self.user_info[i]["data_rate"] / 1e6
                     sum_rate = sum_rate + data_rate
                 reward = sum_rate
-                print(f"reward, sum_rate:{reward}")
+                # print(f"reward, sum_rate:{reward}")
                 self.info["user_info"] = self.user_info
             elif self.metric == "MMR":
                 min_data_rate = self.user_info[0]["data_rate"]
