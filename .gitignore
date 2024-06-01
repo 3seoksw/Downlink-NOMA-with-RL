@@ -4,3 +4,4 @@ pyrightconfig.json
 __pycache__/
 logs/
 outputs/
+simulations/
