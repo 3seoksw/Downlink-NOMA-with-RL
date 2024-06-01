@@ -40,7 +40,7 @@ class NOMA_Env(BaseEnv):
         B_tot: float = 5e6,
         alpha: int = 2,
         P_T: int = 12,
-        seed: Optional[float] = None,
+        seed: Optional[float] = 2024,
         N_0: int = -170,
         min_data_rate: int = 2,
         metric: str = "MSR",
