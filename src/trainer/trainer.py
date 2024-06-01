@@ -60,10 +60,10 @@ class Trainer:
         self.loss_threshold = loss_threshold
         self.epsilon = epsilon
         self.epsilon_min = 0.01
-        self.epsilon_decay = 0.9999975
+        self.epsilon_decay = 0.999975
 
-        self.optimizer = torch.optim.Adam(self.online_model.parameters(), lr=1e-5)
-        self.loss_func = torch.nn.MSELoss()
+        self.optimizer = torch.optim.Adam(self.online_model.parameters(), lr=1e-4)
+        self.loss_func = torch.nn.SmoothL1Loss()
 
         if accelerator not in ["cpu", "mps", "gpu", "cuda"]:
             raise Exception(
@@ -215,10 +215,10 @@ class Trainer:
 
             if episode % self.sync_every == 0:
                 self.sync_networks()
-            if episode % 10 == 0 and self.buffer.get_len() >= 1e3:
+            if episode % 100 == 0 and self.buffer.get_len() >= 1e3:
                 if loss is None:
                     exit()
-                print(f"EP: {episode}: {loss}, {sum_rate}")
+                print(f"EP: {episode}: {loss}, {sum_rate}, {self.epsilon}")
                 self.logger.log_step(value=loss, log="loss")
                 self.logger.log_step(value=sum_rate, log="sum_rate")
 
