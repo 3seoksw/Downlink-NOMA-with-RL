@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 
+from collections import deque
 from typing import Optional
 from envs.core_env import BaseEnv
 
@@ -31,44 +32,43 @@ class NOMA_Env(BaseEnv):
     The action is in the form of `(user_index, channel_index)`.
     """
 
-    def __init__(self, device: str, **env_kwargs):
+    def __init__(
+        self,
+        input_dim: int = 3,
+        num_users: int = 10,
+        num_channels: int = 5,
+        B_tot: float = 5e6,
+        alpha: int = 2,
+        P_T: int = 12,
+        seed: Optional[float] = 2024,
+        N_0: int = -170,
+        min_data_rate: int = 2,
+        metric: str = "MSR",
+        device: str = "cpu",
+    ):
         super().__init__(device)
+
         self.device_name = device
-
-        default_env_kwargs = {
-            "batch_size": 40,
-            "num_users": 8,
-            "num_channels": 4,
-            "channels": [],
-            "B_tot": 5e6,
-            "alpha": 2,
-            "P_T": 12,
-            "seed": 2024,
-            "N_0": -170,
-            "min_data_rate": 6,
-            "metric": "MSR",
-        }
-        self.env_kwargs = {**default_env_kwargs, **env_kwargs}
-
-        self.batch_size = self.env_kwargs["batch_size"]  # 40
-        self.N = self.env_kwargs["num_users"]  # 40
-        self.K = self.env_kwargs["num_channels"]  # 20
-        self.bandwidth_total = self.env_kwargs["B_tot"]  # 5 MHz (5e6 Hz)
+        self.input_dim = input_dim
+        self.N = num_users  # 40
+        self.K = num_channels  # 20
+        self.bandwidth_total = B_tot  # 5 MHz (5e6 Hz)
         self.channel_bandwidth = self.bandwidth_total / self.K  # 2,500,000 Hz
-        self.alpha = self.env_kwargs["alpha"]  # path loss coefficient (alpha=2)
-        self.total_power = self.env_kwargs["P_T"]  # 2 ~ 12 Watt
-        self.seed = self.env_kwargs["seed"]  # 2024
-        self.channels = self.env_kwargs["channels"]
-        self.noise = self.env_kwargs["N_0"]  # -170 dBm/Hz
+        self.alpha = alpha  # path loss coefficient (alpha=2)
+        self.total_power = P_T  # 2 ~ 12 Watt
+        self.seed = seed  # 2024
+        self.noise = N_0  # -170 dBm/Hz
         self.channel_variance = (
             self.bandwidth_total * 10 ** (self.noise / 10) * 1e-3 / self.K
         )  # sigma_{z_k}^2
-        self.min_data_rate = self.env_kwargs["min_data_rate"]  # 2 bps/Hz
-        self.metric = self.env_kwargs["metric"]
+        self.min_data_rate = min_data_rate  # 2 bps/Hz
+        self.metric = metric
 
-        self.states = torch.zeros(self.K * self.N, 2).to(self.device)
-        self.info = {"n_steps": 0}  # TODO: which keys to be inserted
+        self.states = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
+        self.info = {"n_steps": 0, "usr_idx_history": [], "user_info": []}
         self.done = False
+        self.prev_step = 0
+        self.prev_user = 0
 
         # key: channel_idx, value: list[(user_idx0, cnr0), (user_idx1, cnr1)]
         self.channel_info = {}
@@ -76,31 +76,51 @@ class NOMA_Env(BaseEnv):
         # NOTE: See `_generate_user()` for more information
         self.user_info = []
 
-    def reset(self, seed: Optional[int]):
+    def reset(self, seed: Optional[int] = None):
         """
         Reset the NOMA environment.
 
         Returns:
             state: an initial state with the size of NK filled with 0s.
         """
+        #  print("reset, self.N:", self.N, " len:", len(self.user_info))
+
+        self.user_info = [] 
+
         for i in range(self.N):
             user_dict = self._generate_user(i, seed)
+            while not self._is_valid_position(user_dict, self.user_info):
+               user_dict = self._generate_user(i, self.seed) 
+
             self.user_info.append(user_dict)
 
         self.channel_info = {}
+        self.info = {"n_steps": 0, "usr_idx_history": [], "user_info": []}
 
         self.done = False
 
-        self.states = torch.zeros(self.K * self.N, 2).to(self.device)
+        self.states = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
 
-        user_idx = np.random.randint(self.N)
-        channel_idx = np.random.randint(self.K)
-        random_action = user_idx + self.K * channel_idx
-        self.step(random_action)
+        for nk in range(self.N * self.K):
+            # channel_idx = nk // self.N
+            user_idx = nk % self.N
+            self.states[nk, 0] = self.user_info[user_idx]["distance"]
+            cnr = self.get_cnr_by_usr(user_idx)
+            self.user_info[user_idx]["CNR"] = cnr
+            self.states[nk, 1] = cnr
 
-        self.info = {"n_steps": 1}
+        # self.prev_state = self.states.clone()
+        # prev = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
 
-        return (self.states, self.info)
+        # user_idx = np.random.randint(self.N)
+        # channel_idx = np.random.randint(self.K)
+        # random_action = user_idx + self.N * channel_idx
+        # self.prev_step = random_action
+        # self.prev_user = user_idx
+        # self.step(random_action)
+
+        # states = (prev, self.states)
+        return self.states.clone(), self.info
 
     def step(self, action):
         """
@@ -115,29 +135,50 @@ class NOMA_Env(BaseEnv):
             Say the user's index as `n` and channel's index as `k`.
             Then states will be updated as `self.states[N * k + n] = 1`.
         """
+        # self.states[self.prev_step] = self.user_info[self.prev_user]["data_rate"]
         self.info["n_steps"] += 1
 
         channel_idx = action // self.N
-        user_idx = action - channel_idx * self.N
+        user_idx = action % self.N
+        self.user_info[user_idx]["channel"] = channel_idx
         self.allocate_resources(channel_idx, user_idx)
 
+        # if self.info["n_steps"] != 1:
+        self.info["usr_idx_history"].append(user_idx)
+
         # States update
-        nk = channel_idx * self.N + user_idx
-        self.states[nk][0] = self.user_info[user_idx]["distance"]
-        self.states[nk][1] = self.user_info[user_idx]["CNR"]
+        # nk = channel_idx * self.N + user_idx
+        nk = action
+        # self.states[nk, 0] = self.user_info[user_idx]["distance"]
+        # self.states[nk, 1] = self.user_info[user_idx]["CNR"]
+        self.states[nk, 2] = 1
+
+        curr_state = self.states.clone()
 
         reward = self.user_info[user_idx]["data_rate"]
 
         if self.info["n_steps"] == self.N:
             self.done = True
             self.allocate_power()
-            sum_rate = 0
-            for i in range(self.N):
-                sum_rate += self.user_info[i]["data_rate"]
-            print(sum_rate / 1e6)
-            # print(self.user_info)
+            if self.metric == "MSR":
+                sum_rate = 0
+                for i in range(self.N):
+                    data_rate = self.user_info[i]["data_rate"] / 1e6
+                    sum_rate = sum_rate + data_rate
+                reward = sum_rate
+                # print(f"reward, sum_rate:{reward}")
+                self.info["user_info"] = self.user_info
+            elif self.metric == "MMR":
+                min_data_rate = self.user_info[0]["data_rate"]
+                for i in range(self.N):
+                    data_rate = self.user_info[i]["data_rate"]
+                    min_data_rate = min(min_data_rate, data_rate)
+                reward = min_data_rate / 1e6
 
-        return (self.states, reward, self.info, self.done)
+        # states = (self.prev_state, self.states)
+        # self.prev_state = self.states.clone()
+
+        return (curr_state, reward, self.info, self.done)
 
     def clone(self):
         return NOMA_Env(self.device_name, env_kwargs=self.env_kwargs)
@@ -207,7 +248,7 @@ class NOMA_Env(BaseEnv):
             q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
             p_0 = -(cnr0 + cnr1) + np.sqrt(
                 (cnr0 + cnr1) ** 2 + 4 * cnr0 * (cnr1) ** 2 * q_k
-            )
+            ) / 2 * cnr0 * cnr1
             p_1 = q_k - p_0
             return (p_0, p_1)
         else:
@@ -296,6 +337,11 @@ class NOMA_Env(BaseEnv):
         # channel_bandwidth = channel_idx * self.channel_bandwidth
         return 2**2
 
+    def get_cnr_by_usr(self, user_idx):
+        h = self.get_channel_response_by_usr(user_idx)
+        cnr = np.abs(h) ** 2 / self.channel_variance
+        return cnr
+
     def get_cnr(self, channel_idx, n: int = 0):
         """
         CNR (channel-to-noise-ratio):
@@ -306,6 +352,12 @@ class NOMA_Env(BaseEnv):
         cnr = np.abs(h) ** 2 / self.channel_variance
 
         return cnr
+
+    def get_channel_response_by_usr(self, user_idx):
+        g = self.sample_from_rayleigh_distribution()
+        d = self.get_distance_loss(user_idx)
+        h = g * d
+        return h
 
     def get_channel_response(self, channel_idx, n: int = 0):
         """
@@ -358,15 +410,32 @@ class NOMA_Env(BaseEnv):
             }
         """
         # np.random.seed(seed)
+
+        distance = np.random.randint(50, 300)
+        angle = np.random.uniform(0, 2 * np.pi)
+        x = distance * np.cos(angle)
+        y = distance * np.sin(angle)
+
         user_dict = {
             "user_idx": idx,
-            "distance": np.random.randint(50, 300),
+			"x" : x,
+			"y" : y,
+            "distance": distance,
             "power": 0,
             "data_rate": 0,
             "CNR": 0,
+            "history_idx": -1,
+            "channel": -1,
         }
 
         return user_dict
+
+    def _is_valid_position(self, new_user, user_info):
+        for user in user_info:
+           distance = np.sqrt((new_user["x"] - user["x"])**2 + (new_user["y"] - user["y"])**2) 
+           if distance < 30:
+               return False
+        return True
 
     def _update_info(self, steps):
         self.info = {"n_steps": steps}

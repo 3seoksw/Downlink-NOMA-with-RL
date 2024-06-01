@@ -37,7 +37,7 @@ class BaseEnv(Generic[ObsType, ActType]):
         """
         raise NotImplementedError
 
-    def reset(self, seed: Optional[int]) -> tuple[ObsType, dict[str, Any]]:
+    def reset(self, seed: Optional[int] = None) -> tuple[ObsType, dict[str, Any]]:
         """
         Reset the environment to an initial state.
 
@@ -76,5 +76,5 @@ class Wrapper(BaseEnv[ObsType, ActType]):
     def step(self, action: ActType) -> tuple[ObsType, float, dict[str, Any], bool]:
         return self.env.step(action)
 
-    def reset(self, seed: Optional[int]) -> tuple[ObsType, dict[str, Any]]:
+    def reset(self, seed: Optional[int] = None) -> tuple[ObsType, dict[str, Any]]:
         return self.env.reset(seed)

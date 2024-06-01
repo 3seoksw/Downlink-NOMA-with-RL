@@ -1,9 +1,9 @@
 method: "DQN"
-input_dim: 2
+input_dim: 3
 hidden_dim: 32
-batch_size: 40
-num_users: 40
-num_channels: 20
+batch_size: 4
+num_users: 10
+num_channels: 5
 
 metric: "MSR"
 num_episodes: 40000
