@@ -52,7 +52,7 @@ def train(cfg):
         loss_threshold=cfg.loss_threshold,
     )
 
-    trainer.train_test()
+    trainer.fit()
     trainer.test()
 
 
