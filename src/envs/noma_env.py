@@ -240,7 +240,7 @@ class NOMA_Env(BaseEnv):
             q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
             p_0 = -(cnr0 + cnr1) + np.sqrt(
                 (cnr0 + cnr1) ** 2 + 4 * cnr0 * (cnr1) ** 2 * q_k
-            )
+            ) / 2 * cnr0 * cnr1
             p_1 = q_k - p_0
             return (p_0, p_1)
         else:
