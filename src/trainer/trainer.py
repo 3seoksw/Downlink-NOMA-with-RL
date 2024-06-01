@@ -137,9 +137,7 @@ class Trainer:
 
                     m_reward = m_reward.squeeze(1).to(self.device)
                     expected_reward = self.td_estimate(m_state, m_action)
-                    target_reward = self.td_target(
-                        m_reward, m_next_state, m_done
-                    )
+                    target_reward = self.td_target(m_reward, m_next_state, m_done)
 
                     # loss = self.loss_func(expected_reward, m_reward)
                     loss = self.loss_func(expected_reward, target_reward)
@@ -159,7 +157,7 @@ class Trainer:
                 history[i].append(data_rate)
                 m_state = history[i][0]
                 m_next_state = history[i][1]
-                m_action = history[i ][2]
+                m_action = history[i][2]
                 m_done = history[i][3]
                 m_reward = history[i][4]
                 self.buffer.save_into_memory(
@@ -370,6 +368,7 @@ class Trainer:
 
     @torch.no_grad()
     def td_target(self, reward, next_state, done):
+        reward = reward.to(self.device).squeeze(1)
         done = done.to(self.device).squeeze(1)
         next_state_reward = self.target_model(next_state)
         pred_reward, action = torch.max(next_state_reward, dim=1)
