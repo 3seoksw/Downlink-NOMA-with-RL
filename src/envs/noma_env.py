@@ -173,6 +173,7 @@ class NOMA_Env(BaseEnv):
                     self.history[i].append(data_rate)
                     sum_rate = sum_rate + data_rate
                 reward = sum_rate
+                print(f"reward, sum_rate:{reward}")
                 self.info["user_info"] = self.user_info
                 # self.info = self.history
             elif self.metric == "MMR":
@@ -253,9 +254,9 @@ class NOMA_Env(BaseEnv):
             return (p_0, p_1)
         elif self.metric == "MMR":
             q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
-            p_0 = -(cnr0 + cnr1) + np.sqrt(
+            p_0 = (-(cnr0 + cnr1) + np.sqrt(
                 (cnr0 + cnr1) ** 2 + 4 * cnr0 * (cnr1) ** 2 * q_k
-            )
+            ))/2*cnr0*cnr1
             p_1 = q_k - p_0
             return (p_0, p_1)
         else:
