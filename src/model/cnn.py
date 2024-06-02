@@ -10,12 +10,14 @@ class CNN(nn.Module):
         num_users=40,
         num_channels=20,
         device="cpu",
+        method="Policy Gradient",
     ):
         super().__init__()
         self.N = num_users
         self.K = num_channels
         state_size = self.K * self.N
         self.device = device
+        self.method = method
 
         self.net = nn.Sequential(
             nn.Conv1d(
@@ -36,7 +38,7 @@ class CNN(nn.Module):
             nn.ReLU(),
             nn.Flatten(),
             nn.Linear(128 * num_features, 64 * num_features),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(64 * num_features, state_size),
         )
 
@@ -46,6 +48,9 @@ class CNN(nn.Module):
         mask = self.get_mask(state)
         out = self.net(state)
         output = out.masked_fill(mask, float("-inf"))
+        if self.method == "Policy Gradient":
+            # output = nn.functional.sigmoid(output)
+            output = nn.functional.softmax(output, dim=1)
 
         return output
 
