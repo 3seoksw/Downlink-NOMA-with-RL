@@ -1,15 +1,13 @@
 import copy
 import torch
-import numpy as np
 import matplotlib.pyplot as plt
 import random
 
 from envs.core_env import BaseEnv
-from model.base_model import BaseModel
 from trainer.logger import Logger
 from trainer.replay_memory import ReplayMemory
-from model.ann import ANN
 from tqdm import tqdm
+from torch.distributions import Categorical
 
 
 class Trainer:
@@ -44,12 +42,11 @@ class Trainer:
         # Testing objects
         self.env = env
         self.online_model = model  # act randomly based on the given distribution
-        self.target_model = copy.deepcopy(self.online_model)
         self.sync_every = 1e2
 
         # Baseline objects
+        self.target_model = copy.deepcopy(self.online_model)
         self.env_bl = env_bl
-        # self.model_bl = copy.deepcopy(self.model)  # act greedily
 
         self.metric = metric  # "MSR" or "MMR"
         self.logger = Logger(save_dir=save_dir, save_every=save_every)
@@ -173,54 +170,66 @@ class Trainer:
 
     def fit(self):
         episodes = tqdm(range(self.num_episodes))
+        avg_sum_rate = 0
+        avg_loss = 0
+        max_sum_rate = 0
         for episode in episodes:
             state, info = self.env.reset()
+            state_bl, info_bl = self.env_bl.reset()
             state = state.unsqueeze(0)
+            state_bl = state_bl.unsqueeze(0)
 
-            history = []
             loss = None
-            for step in range(self.N):
-                if self.buffer.get_len() >= 1e3:
-                    loss = self.learn()
+            log_probs = 1
+            for _ in range(self.N):
+                action, log_prob, action_bl = self.action_select(state, state_bl)
+                log_probs = log_probs * log_prob
 
-                action = self.action_selection(state)
-
-                next_state, _, info, done = self.env.step(action)
-                history.append(
-                    [
-                        state,
-                        next_state,
-                        torch.tensor([action]),
-                        torch.tensor([done]),
-                    ]
-                )
+                next_state, _, info, _ = self.env.step(action)
+                next_state_bl, _, info_bl, _ = self.env_bl.step(action_bl)
                 state = next_state.unsqueeze(0)
+                state_bl = next_state_bl.unsqueeze(0)
 
-            sum_rate = 0
-            for i, idx in enumerate(info["usr_idx_history"]):
-                usr_info = info["user_info"][idx]
-                data_rate = usr_info["data_rate"] / 1e6
-                data_rate = torch.tensor([data_rate], dtype=torch.float32)
-                sum_rate = sum_rate + data_rate
+            sum_rate = self.calculate_actual_sum_rate(info)
+            sum_rate_bl = self.calculate_actual_sum_rate(info_bl)
+            loss = self.policy_gradient(log_probs, sum_rate, sum_rate_bl)
 
-                history[i].append(data_rate)
-                m_state = history[i][0]
-                m_next_state = history[i][1]
-                m_action = history[i][2]
-                m_done = history[i][3]
-                m_reward = history[i][4]
-                self.buffer.save_into_memory(
-                    m_state, m_next_state, m_action, m_done, m_reward
-                )
+            avg_sum_rate += sum_rate
+            avg_loss += loss
+            max_sum_rate = max(sum_rate, max_sum_rate)
 
-            if episode % self.sync_every == 0:
+            if sum_rate > sum_rate_bl:
                 self.sync_networks()
-            if episode % 100 == 0 and self.buffer.get_len() >= 1e3:
-                if loss is None:
-                    exit()
-                print(f"EP: {episode}: {loss}, {sum_rate}, {self.epsilon}")
+
+            if episode % 100 == 0:
+                avg_sum_rate /= 100
+                avg_loss /= 100
+                print(f"EP: {episode}: {avg_loss}, {avg_sum_rate}, {max_sum_rate}")
                 self.logger.log_step(value=loss, log="loss")
                 self.logger.log_step(value=sum_rate, log="sum_rate")
+                avg_sum_rate = 0
+                avg_loss = 0
+
+    def action_select(self, state, state_bl):
+        probs = self.online_model(state)
+        dist = Categorical(probs)
+        action = dist.sample()
+        log_prob = dist.log_prob(action)
+
+        probs_bl = self.target_model(state_bl)
+        dist_bl = Categorical(probs_bl)
+        action_bl = dist_bl.sample()
+
+        return action, log_prob, action_bl
+
+    def policy_gradient(self, log_probs, reward, reward_bl):
+        loss = (reward - reward_bl) * log_probs
+
+        self.optimizer.zero_grad()
+        loss.backward(retain_graph=True)
+        self.optimizer.step()
+
+        return loss.item()
 
     def action_selection(self, state):
         action_space = self.online_model(state)
@@ -255,11 +264,13 @@ class Trainer:
 
     def calculate_actual_sum_rate(self, info: dict):
         sum_rate = 0
-        for i, idx in enumerate(info["usr_idx_history"]):
+        for idx in info["usr_idx_history"]:
             usr_info = info["user_info"][idx]
             data_rate = usr_info["data_rate"] / 1e6
             data_rate = torch.tensor([data_rate], dtype=torch.float32)
             sum_rate = sum_rate + data_rate
+
+        return sum_rate
 
     def train(self):
         T_s = 5  # training stopping criterion
