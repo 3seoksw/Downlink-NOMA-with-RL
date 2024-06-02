@@ -75,6 +75,9 @@ class NOMA_Env(BaseEnv):
 
         # NOTE: See `_generate_user()` for more information
         self.user_info = []
+        for i in range(self.N):
+            user_dict = self._generate_user(i, seed + i)
+            self.user_info.append(user_dict)
 
     def reset(self, seed: Optional[int] = None):
         """
@@ -84,16 +87,6 @@ class NOMA_Env(BaseEnv):
             state: an initial state with the size of NK filled with 0s.
         """
         #  print("reset, self.N:", self.N, " len:", len(self.user_info))
-
-        self.user_info = [] 
-
-        for i in range(self.N):
-            user_dict = self._generate_user(i, seed)
-            while not self._is_valid_position(user_dict, self.user_info):
-               user_dict = self._generate_user(i, self.seed) 
-
-            self.user_info.append(user_dict)
-
         self.channel_info = {}
         self.info = {"n_steps": 0, "usr_idx_history": [], "user_info": []}
 
@@ -135,7 +128,6 @@ class NOMA_Env(BaseEnv):
             Say the user's index as `n` and channel's index as `k`.
             Then states will be updated as `self.states[N * k + n] = 1`.
         """
-        # self.states[self.prev_step] = self.user_info[self.prev_user]["data_rate"]
         self.info["n_steps"] += 1
 
         channel_idx = action // self.N
@@ -147,11 +139,9 @@ class NOMA_Env(BaseEnv):
         self.info["usr_idx_history"].append(user_idx)
 
         # States update
-        # nk = channel_idx * self.N + user_idx
         nk = action
-        # self.states[nk, 0] = self.user_info[user_idx]["distance"]
-        # self.states[nk, 1] = self.user_info[user_idx]["CNR"]
-        self.states[nk, 2] = 1
+        channel_idx = channel_idx.item()
+        self.states[nk, 2] = len(self.channel_info[channel_idx])
 
         curr_state = self.states.clone()
 
@@ -166,7 +156,6 @@ class NOMA_Env(BaseEnv):
                     data_rate = self.user_info[i]["data_rate"] / 1e6
                     sum_rate = sum_rate + data_rate
                 reward = sum_rate
-                # print(f"reward, sum_rate:{reward}")
                 self.info["user_info"] = self.user_info
             elif self.metric == "MMR":
                 min_data_rate = self.user_info[0]["data_rate"]
@@ -174,9 +163,6 @@ class NOMA_Env(BaseEnv):
                     data_rate = self.user_info[i]["data_rate"]
                     min_data_rate = min(min_data_rate, data_rate)
                 reward = min_data_rate / 1e6
-
-        # states = (self.prev_state, self.states)
-        # self.prev_state = self.states.clone()
 
         return (curr_state, reward, self.info, self.done)
 
@@ -246,9 +232,13 @@ class NOMA_Env(BaseEnv):
             return (p_0, p_1)
         elif self.metric == "MMR":
             q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
-            p_0 = -(cnr0 + cnr1) + np.sqrt(
-                (cnr0 + cnr1) ** 2 + 4 * cnr0 * (cnr1) ** 2 * q_k
-            ) / 2 * cnr0 * cnr1
+            p_0 = (
+                -(cnr0 + cnr1)
+                + np.sqrt((cnr0 + cnr1) ** 2 + 4 * cnr0 * (cnr1) ** 2 * q_k)
+                / 2
+                * cnr0
+                * cnr1
+            )
             p_1 = q_k - p_0
             return (p_0, p_1)
         else:
@@ -409,7 +399,7 @@ class NOMA_Env(BaseEnv):
                 "data_rate": float,
             }
         """
-        # np.random.seed(seed)
+        np.random.seed(seed)
 
         distance = np.random.randint(50, 300)
         angle = np.random.uniform(0, 2 * np.pi)
@@ -418,8 +408,8 @@ class NOMA_Env(BaseEnv):
 
         user_dict = {
             "user_idx": idx,
-			"x" : x,
-			"y" : y,
+            "x": x,
+            "y": y,
             "distance": distance,
             "power": 0,
             "data_rate": 0,
@@ -432,9 +422,11 @@ class NOMA_Env(BaseEnv):
 
     def _is_valid_position(self, new_user, user_info):
         for user in user_info:
-           distance = np.sqrt((new_user["x"] - user["x"])**2 + (new_user["y"] - user["y"])**2) 
-           if distance < 30:
-               return False
+            distance = np.sqrt(
+                (new_user["x"] - user["x"]) ** 2 + (new_user["y"] - user["y"]) ** 2
+            )
+            if distance < 30:
+                return False
         return True
 
     def _update_info(self, steps):
