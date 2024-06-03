@@ -86,7 +86,6 @@ class NOMA_Env(BaseEnv):
         Returns:
             state: an initial state with the size of NK filled with 0s.
         """
-        #  print("reset, self.N:", self.N, " len:", len(self.user_info))
         self.channel_info = {}
         self.info = {"n_steps": 0, "usr_idx_history": [], "user_info": []}
 
@@ -163,6 +162,7 @@ class NOMA_Env(BaseEnv):
                     data_rate = self.user_info[i]["data_rate"]
                     min_data_rate = min(min_data_rate, data_rate)
                 reward = min_data_rate / 1e6
+                self.info["user_info"] = self.user_info
 
         return (curr_state, reward, self.info, self.done)
 
@@ -222,7 +222,7 @@ class NOMA_Env(BaseEnv):
     def get_power(self, channel_idx):
         cnr0 = self.get_cnr(channel_idx, 0)
         cnr1 = self.get_cnr(channel_idx, 1)
-        la = self.find_lambda(power=self.total_power, metric=self.metric)
+        la = self.find_lambda(power=self.total_power)
 
         if self.metric == "MSR":
             A = self.get_A(channel_idx)
@@ -235,10 +235,7 @@ class NOMA_Env(BaseEnv):
             p_0 = (
                 -(cnr0 + cnr1)
                 + np.sqrt((cnr0 + cnr1) ** 2 + 4 * cnr0 * (cnr1) ** 2 * q_k)
-                / 2
-                * cnr0
-                * cnr1
-            )
+            ) / (2 * cnr0 * cnr1)
             p_1 = q_k - p_0
             return (p_0, p_1)
         else:
@@ -265,7 +262,6 @@ class NOMA_Env(BaseEnv):
         end=1e10,
         epsilon=1e-10,
         threshold=1e-5,
-        metric: str = "MSR",
     ):
         """Execute bisection method to find lagrangian coefficient"""
         while True:
@@ -275,9 +271,9 @@ class NOMA_Env(BaseEnv):
                 A = self.get_A(channel_idx)
                 cnr0 = self.get_cnr(channel_idx, 0)
                 cnr1 = self.get_cnr(channel_idx, 1)
-                if metric == "MSR":
+                if self.metric == "MSR":
                     q_k = self.get_msr_power_budget(cnr0, cnr1, A, la)
-                elif metric == "MMR":
+                elif self.metric == "MMR":
                     q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
                 else:
                     raise KeyError(
