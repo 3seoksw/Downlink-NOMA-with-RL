@@ -21,13 +21,14 @@ class Trainer:
         batch_size: int = 40,
         num_users: int = 10,
         num_channels: int = 15,
+        num_epochs: int = 10,
         num_episodes: int = 10000,
         num_tests: int = 10,
         loss_threshold: float = 1e-3,
         epsilon: float = 1,
         save_dir: str = "simulations",
         save_every: int = 10,
-        method: str = "Q-Learning",
+        method: str = "Policy Gradient",
     ):
         """
         Creates two sets of training-purpose objects: baseline objects and testing objects.
@@ -52,6 +53,7 @@ class Trainer:
         self.logger = Logger(save_dir=save_dir, save_every=save_every)
         self.buffer = ReplayMemory(batch_size=self.batch_size)
 
+        self.num_epochs = num_epochs
         self.num_episodes = num_episodes
         self.num_tests = num_tests
         self.loss_threshold = loss_threshold
@@ -165,65 +167,85 @@ class Trainer:
                 sum.append(sum_rate)
                 print(f"EP {episode}: {loss}, {sum_rate}")
 
-        plt.plot(sum)
-        plt.show()
-
     def fit(self):
-        episodes = tqdm(range(self.num_episodes))
-        avg_sum_rate = 0
+        if self.metric == "MSR":
+            log_name = "sum_rate"
+        elif self.metric == "MMR":
+            log_name = "min_rate"
+        else:
+            raise KeyError()
+
         avg_loss = 0
-        max_sum_rate = 0
+        avg_reward = 0
+        max_reward = 0
+        cur_max_reward = 0
+
+        episodes = tqdm(range(self.num_episodes))
         for episode in episodes:
-            state, info = self.env.reset()
-            state_bl, info_bl = self.env_bl.reset()
+            state, _ = self.env.reset(episode)
+            state_bl, _ = self.env_bl.reset()
             state = state.unsqueeze(0)
             state_bl = state_bl.unsqueeze(0)
 
             loss = None
-            log_probs = 1
+            log_probs = 0
+            final_reward = 0
+            final_reward_bl = 0
             for _ in range(self.N):
                 action, log_prob, action_bl = self.action_select(state, state_bl)
-                log_probs = log_probs * log_prob
+                log_probs = log_probs + log_prob
 
-                next_state, _, info, _ = self.env.step(action)
-                next_state_bl, _, info_bl, _ = self.env_bl.step(action_bl)
+                next_state, reward, _, _ = self.env.step(action)
+                next_state_bl, reward_bl, _, _ = self.env_bl.step(action_bl)
                 state = next_state.unsqueeze(0)
                 state_bl = next_state_bl.unsqueeze(0)
 
-            sum_rate = self.calculate_actual_sum_rate(info)
-            sum_rate_bl = self.calculate_actual_sum_rate(info_bl)
-            loss = self.policy_gradient(log_probs, sum_rate, sum_rate_bl)
+                final_reward = reward
+                final_reward_bl = reward_bl
 
-            avg_sum_rate += sum_rate
+            loss = self.policy_gradient(log_probs, final_reward, final_reward_bl)
+
+            avg_reward += final_reward
+            max_reward = max(final_reward, max_reward)
+            cur_max_reward = max(final_reward, cur_max_reward)
             avg_loss += loss
-            max_sum_rate = max(sum_rate, max_sum_rate)
 
-            if sum_rate > sum_rate_bl:
+            if final_reward >= final_reward_bl:
                 self.sync_networks()
 
-            if episode % 100 == 0:
-                avg_sum_rate /= 100
-                avg_loss /= 100
-                print(f"EP: {episode}: {avg_loss}, {avg_sum_rate}, {max_sum_rate}")
+            if episode % 10 == 0:
                 self.logger.log_step(value=loss, log="loss")
-                self.logger.log_step(value=sum_rate, log="sum_rate")
-                avg_sum_rate = 0
+                self.logger.log_step(value=final_reward, log=log_name)
+
+            if episode % 100 == 0 and episode != 0:
+                avg_loss /= 100
+                avg_reward /= 100
+                print(f"EP: {episode}: {avg_loss}, {avg_reward}, {max_reward}")
+                self.logger.log_step(value=avg_loss, log="avg_loss")
+                self.logger.log_step(value=avg_reward, log=f"avg_{log_name}")
                 avg_loss = 0
+                avg_reward = 0
 
     def action_select(self, state, state_bl):
+        """Policy Gradient (REINFORCE) Method:
+        Online model samples from the model's probability distribution
+        and baseline model chooses the action corresponding to the highest probability.
+        """
+        # Online model
         probs = self.online_model(state)
         dist = Categorical(probs)
         action = dist.sample()
         log_prob = dist.log_prob(action)
 
+        # Baseline model
         probs_bl = self.target_model(state_bl)
-        dist_bl = Categorical(probs_bl)
-        action_bl = dist_bl.sample()
+        action_bl = torch.argmax(probs_bl)
 
         return action, log_prob, action_bl
 
     def policy_gradient(self, log_probs, reward, reward_bl):
-        loss = (reward - reward_bl) * log_probs
+        """REINFORCE Algorithm"""
+        loss = (reward_bl - reward) * log_probs
 
         self.optimizer.zero_grad()
         loss.backward(retain_graph=True)
@@ -262,15 +284,19 @@ class Trainer:
 
         return loss.item()
 
-    def calculate_actual_sum_rate(self, info: dict):
+    def calculate_actual_data_rate(self, info: dict):
         sum_rate = 0
+        min_rate = info["user_info"][0]["data_rate"]
         for idx in info["usr_idx_history"]:
             usr_info = info["user_info"][idx]
             data_rate = usr_info["data_rate"] / 1e6
-            data_rate = torch.tensor([data_rate], dtype=torch.float32)
+            if data_rate < min_rate:
+                min_rate = data_rate
             sum_rate = sum_rate + data_rate
 
-        return sum_rate
+        sum_rate = torch.tensor([sum_rate], dtype=torch.float32)
+        min_rate = torch.tensor([min_rate], dtype=torch.float32)
+        return sum_rate, min_rate
 
     def train(self):
         T_s = 5  # training stopping criterion
