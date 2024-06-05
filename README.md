@@ -41,12 +41,12 @@ python src/train.py
 
 ## To-Do List
 
-- [x] ANN model
-- [ ] Linear model
-- [ ] CNN model
-- [ ] Environment
-- [x] Vectorized Env
-- [ ] Trainer
+- [ ] ANN model: `loss.backward` is not working
+- [x] CNN model
+- [x] Environment
+- [ ] Vectorized Env: fix required for batch learing
+- [x] Trainer
+- [ ] Train with various distance profiles
 
 <a id="1" href="https://ieeexplore.ieee.org/abstract/document/8790780">[1]</a>
 He, Chaofan, Yang Hu, Yan Chen, and Bing Zeng. "Joint power allocation and channel assignment for NOMA with deep reinforcement learning."
