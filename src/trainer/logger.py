@@ -1,8 +1,13 @@
 import os
 
+from datetime import datetime
+
+
 class Logger:
     def __init__(self, save_dir: str = "logs", save_every: int = 20):
-        self.save_dir = save_dir
+        now = datetime.now().strftime("%Y-%m-%d_%H:%M")
+        self.save_dir = os.path.join(save_dir, now)
+        os.mkdir(self.save_dir)
         self.save_every = save_every
         self.log = {}
         self.curr_step = 0
@@ -22,7 +27,7 @@ class Logger:
     def save(self):
         for key in self.log.keys():
             idx = key.index("_") + 1
-            mode = key[:idx - 1]
+            mode = key[: idx - 1]
             log = key[idx:]
 
             dir_path = os.path.join(self.save_dir, mode)
