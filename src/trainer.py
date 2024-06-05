@@ -15,6 +15,7 @@ def train(cfg):
     env = NOMA_Env(
         num_users=cfg.num_users,
         num_channels=cfg.num_channels,
+        metric=cfg.metric,
         device=device,
     )
     env_bl = NOMA_Env(
