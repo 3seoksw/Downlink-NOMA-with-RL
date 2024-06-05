@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 
-from collections import deque
 from typing import Optional
 from envs.core_env import BaseEnv
 
@@ -75,8 +74,10 @@ class NOMA_Env(BaseEnv):
 
         # NOTE: See `_generate_user()` for more information
         self.user_info = []
+        if self.seed is None:
+            self.seed = 2024
         for i in range(self.N):
-            user_dict = self._generate_user(i, seed + i)
+            user_dict = self._generate_user(i, self.seed + i)
             self.user_info.append(user_dict)
 
     def reset(self, seed: Optional[int] = None):
@@ -88,30 +89,16 @@ class NOMA_Env(BaseEnv):
         """
         self.channel_info = {}
         self.info = {"n_steps": 0, "usr_idx_history": [], "user_info": []}
-
         self.done = False
 
         self.states = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
-
         for nk in range(self.N * self.K):
-            # channel_idx = nk // self.N
             user_idx = nk % self.N
             self.states[nk, 0] = self.user_info[user_idx]["distance"]
             cnr = self.get_cnr_by_usr(user_idx)
             self.user_info[user_idx]["CNR"] = cnr
             self.states[nk, 1] = cnr
 
-        # self.prev_state = self.states.clone()
-        # prev = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
-
-        # user_idx = np.random.randint(self.N)
-        # channel_idx = np.random.randint(self.K)
-        # random_action = user_idx + self.N * channel_idx
-        # self.prev_step = random_action
-        # self.prev_user = user_idx
-        # self.step(random_action)
-
-        # states = (prev, self.states)
         return self.states.clone(), self.info
 
     def step(self, action):
@@ -134,7 +121,6 @@ class NOMA_Env(BaseEnv):
         self.user_info[user_idx]["channel"] = channel_idx
         self.allocate_resources(channel_idx, user_idx)
 
-        # if self.info["n_steps"] != 1:
         self.info["usr_idx_history"].append(user_idx)
 
         # States update
@@ -383,7 +369,7 @@ class NOMA_Env(BaseEnv):
 
         return distance_loss
 
-    def _generate_user(self, idx, seed):
+    def _generate_user(self, idx: int, seed: Optional[float] = None):
         """
         Generate an user at a random position.
 
@@ -395,7 +381,8 @@ class NOMA_Env(BaseEnv):
                 "data_rate": float,
             }
         """
-        np.random.seed(seed)
+        if seed is not None:
+            np.random.seed(seed)
 
         distance = np.random.randint(50, 300)
         angle = np.random.uniform(0, 2 * np.pi)
