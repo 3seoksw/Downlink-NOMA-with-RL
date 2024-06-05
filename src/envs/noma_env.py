@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 
-from collections import deque
 from typing import Optional
 from envs.core_env import BaseEnv
 
@@ -75,6 +74,11 @@ class NOMA_Env(BaseEnv):
 
         # NOTE: See `_generate_user()` for more information
         self.user_info = []
+        if self.seed is None:
+            self.seed = 2024
+        for i in range(self.N):
+            user_dict = self._generate_user(i, self.seed + i)
+            self.user_info.append(user_dict)
 
     def reset(self, seed: Optional[int] = None):
         """
@@ -83,43 +87,18 @@ class NOMA_Env(BaseEnv):
         Returns:
             state: an initial state with the size of NK filled with 0s.
         """
-        #  print("reset, self.N:", self.N, " len:", len(self.user_info))
-
-        self.user_info = [] 
-
-        for i in range(self.N):
-            user_dict = self._generate_user(i, seed)
-            while not self._is_valid_position(user_dict, self.user_info):
-               user_dict = self._generate_user(i, self.seed) 
-
-            self.user_info.append(user_dict)
-
         self.channel_info = {}
         self.info = {"n_steps": 0, "usr_idx_history": [], "user_info": []}
-
         self.done = False
 
         self.states = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
-
         for nk in range(self.N * self.K):
-            # channel_idx = nk // self.N
             user_idx = nk % self.N
             self.states[nk, 0] = self.user_info[user_idx]["distance"]
             cnr = self.get_cnr_by_usr(user_idx)
             self.user_info[user_idx]["CNR"] = cnr
             self.states[nk, 1] = cnr
 
-        # self.prev_state = self.states.clone()
-        # prev = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
-
-        # user_idx = np.random.randint(self.N)
-        # channel_idx = np.random.randint(self.K)
-        # random_action = user_idx + self.N * channel_idx
-        # self.prev_step = random_action
-        # self.prev_user = user_idx
-        # self.step(random_action)
-
-        # states = (prev, self.states)
         return self.states.clone(), self.info
 
     def step(self, action):
@@ -135,7 +114,6 @@ class NOMA_Env(BaseEnv):
             Say the user's index as `n` and channel's index as `k`.
             Then states will be updated as `self.states[N * k + n] = 1`.
         """
-        # self.states[self.prev_step] = self.user_info[self.prev_user]["data_rate"]
         self.info["n_steps"] += 1
 
         channel_idx = action // self.N
@@ -143,15 +121,12 @@ class NOMA_Env(BaseEnv):
         self.user_info[user_idx]["channel"] = channel_idx
         self.allocate_resources(channel_idx, user_idx)
 
-        # if self.info["n_steps"] != 1:
         self.info["usr_idx_history"].append(user_idx)
 
         # States update
-        # nk = channel_idx * self.N + user_idx
         nk = action
-        # self.states[nk, 0] = self.user_info[user_idx]["distance"]
-        # self.states[nk, 1] = self.user_info[user_idx]["CNR"]
-        self.states[nk, 2] = 1
+        channel_idx = channel_idx.item()
+        self.states[nk, 2] = len(self.channel_info[channel_idx])
 
         curr_state = self.states.clone()
 
@@ -166,7 +141,6 @@ class NOMA_Env(BaseEnv):
                     data_rate = self.user_info[i]["data_rate"] / 1e6
                     sum_rate = sum_rate + data_rate
                 reward = sum_rate
-                # print(f"reward, sum_rate:{reward}")
                 self.info["user_info"] = self.user_info
             elif self.metric == "MMR":
                 min_data_rate = self.user_info[0]["data_rate"]
@@ -174,9 +148,7 @@ class NOMA_Env(BaseEnv):
                     data_rate = self.user_info[i]["data_rate"]
                     min_data_rate = min(min_data_rate, data_rate)
                 reward = min_data_rate / 1e6
-
-        # states = (self.prev_state, self.states)
-        # self.prev_state = self.states.clone()
+                self.info["user_info"] = self.user_info
 
         return (curr_state, reward, self.info, self.done)
 
@@ -236,7 +208,7 @@ class NOMA_Env(BaseEnv):
     def get_power(self, channel_idx):
         cnr0 = self.get_cnr(channel_idx, 0)
         cnr1 = self.get_cnr(channel_idx, 1)
-        la = self.find_lambda(power=self.total_power, metric=self.metric)
+        la = self.find_lambda(power=self.total_power)
 
         if self.metric == "MSR":
             A = self.get_A(channel_idx)
@@ -246,9 +218,10 @@ class NOMA_Env(BaseEnv):
             return (p_0, p_1)
         elif self.metric == "MMR":
             q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
-            p_0 = -(cnr0 + cnr1) + np.sqrt(
-                (cnr0 + cnr1) ** 2 + 4 * cnr0 * (cnr1) ** 2 * q_k
-            ) / 2 * cnr0 * cnr1
+            p_0 = (
+                -(cnr0 + cnr1)
+                + np.sqrt((cnr0 + cnr1) ** 2 + 4 * cnr0 * (cnr1) ** 2 * q_k)
+            ) / (2 * cnr0 * cnr1)
             p_1 = q_k - p_0
             return (p_0, p_1)
         else:
@@ -275,7 +248,6 @@ class NOMA_Env(BaseEnv):
         end=1e10,
         epsilon=1e-10,
         threshold=1e-5,
-        metric: str = "MSR",
     ):
         """Execute bisection method to find lagrangian coefficient"""
         while True:
@@ -285,9 +257,9 @@ class NOMA_Env(BaseEnv):
                 A = self.get_A(channel_idx)
                 cnr0 = self.get_cnr(channel_idx, 0)
                 cnr1 = self.get_cnr(channel_idx, 1)
-                if metric == "MSR":
+                if self.metric == "MSR":
                     q_k = self.get_msr_power_budget(cnr0, cnr1, A, la)
-                elif metric == "MMR":
+                elif self.metric == "MMR":
                     q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
                 else:
                     raise KeyError(
@@ -397,7 +369,7 @@ class NOMA_Env(BaseEnv):
 
         return distance_loss
 
-    def _generate_user(self, idx, seed):
+    def _generate_user(self, idx: int, seed: Optional[float] = None):
         """
         Generate an user at a random position.
 
@@ -409,7 +381,8 @@ class NOMA_Env(BaseEnv):
                 "data_rate": float,
             }
         """
-        # np.random.seed(seed)
+        if seed is not None:
+            np.random.seed(seed)
 
         distance = np.random.randint(50, 300)
         angle = np.random.uniform(0, 2 * np.pi)
@@ -418,8 +391,8 @@ class NOMA_Env(BaseEnv):
 
         user_dict = {
             "user_idx": idx,
-			"x" : x,
-			"y" : y,
+            "x": x,
+            "y": y,
             "distance": distance,
             "power": 0,
             "data_rate": 0,
@@ -432,9 +405,11 @@ class NOMA_Env(BaseEnv):
 
     def _is_valid_position(self, new_user, user_info):
         for user in user_info:
-           distance = np.sqrt((new_user["x"] - user["x"])**2 + (new_user["y"] - user["y"])**2) 
-           if distance < 30:
-               return False
+            distance = np.sqrt(
+                (new_user["x"] - user["x"]) ** 2 + (new_user["y"] - user["y"]) ** 2
+            )
+            if distance < 30:
+                return False
         return True
 
     def _update_info(self, steps):
