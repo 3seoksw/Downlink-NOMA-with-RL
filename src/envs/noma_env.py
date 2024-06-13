@@ -44,6 +44,7 @@ class NOMA_Env(BaseEnv):
         min_data_rate: int = 2,
         metric: str = "MSR",
         device: str = "cpu",
+        **kwargs
     ):
         super().__init__(device)
 
@@ -72,6 +73,10 @@ class NOMA_Env(BaseEnv):
         # key: channel_idx, value: list[(user_idx0, cnr0), (user_idx1, cnr1)]
         self.channel_info = {}
 
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
         # NOTE: See `_generate_user()` for more information
         self.user_info = []
         if self.seed is None:
@@ -87,6 +92,11 @@ class NOMA_Env(BaseEnv):
         Returns:
             state: an initial state with the size of NK filled with 0s.
         """
+        self.user_info = []
+        for i in range(self.N):
+            user_dict = self._generate_user(i)
+            self.user_info.append(user_dict)
+
         self.channel_info = {}
         self.info = {"n_steps": 0, "usr_idx_history": [], "user_info": []}
         self.done = False
