@@ -6,6 +6,7 @@ import random
 from envs.core_env import BaseEnv
 from trainer.logger import Logger
 from trainer.replay_memory import ReplayMemory
+from trainer.policy_memory import PolicyMemory
 from tqdm import tqdm
 from torch.distributions import Categorical
 
@@ -52,6 +53,7 @@ class Trainer:
         self.metric = metric  # "MSR" or "MMR"
         self.logger = Logger(save_dir=save_dir, save_every=save_every)
         self.buffer = ReplayMemory(batch_size=self.batch_size)
+        self.memory = PolicyMemory(batch_size=self.batch_size)
 
         self.num_epochs = num_epochs
         self.num_episodes = num_episodes
@@ -191,8 +193,16 @@ class Trainer:
             log_probs = 0
             final_reward = 0
             final_reward_bl = 0
+            state_list = []
+            state_bl_list = []
+            action_list = []
+            action_bl_list = []
             for _ in range(self.N):
+                state_list.append(state.squeeze(0))
+                state_bl_list.append(state_bl.squeeze(0))
                 action, log_prob, action_bl = self.action_select(state, state_bl)
+                action_list.append(action)
+                action_bl_list.append(action_bl)
                 log_probs = log_probs + log_prob
 
                 next_state, reward, _, _ = self.env.step(action)
@@ -203,15 +213,25 @@ class Trainer:
                 final_reward = reward
                 final_reward_bl = reward_bl
 
-            loss = self.policy_gradient(log_probs, final_reward, final_reward_bl)
+            self.memory.save_into_memory(
+                torch.stack(state_list),
+                torch.stack(action_list),
+                torch.tensor([final_reward], dtype=torch.float32),
+                torch.tensor([final_reward_bl], dtype=torch.float32),
+            )
+            # loss = self.policy_gradient(log_probs, final_reward, final_reward_bl)
+            loss = 0
 
             avg_reward += final_reward
             max_reward = max(final_reward, max_reward)
             cur_max_reward = max(final_reward, cur_max_reward)
-            avg_loss += loss
 
             if final_reward >= final_reward_bl:
                 self.sync_networks()
+
+            if self.memory.get_len() >= 10:
+                loss = self.learn_policy()
+                avg_loss += loss
 
             if episode % 10 == 0:
                 self.logger.log_step(value=loss, log="loss")
@@ -246,12 +266,27 @@ class Trainer:
     def policy_gradient(self, log_probs, reward, reward_bl):
         """REINFORCE Algorithm"""
         loss = (reward_bl - reward) * log_probs
+        loss = torch.mean(loss)
 
         self.optimizer.zero_grad()
         loss.backward(retain_graph=True)
         self.optimizer.step()
 
         return loss.item()
+
+    def learn_policy(self):
+        log_probs = torch.zeros(self.batch_size)
+        history = self.memory.sample_from_memory()
+        state, action, reward, reward_bl = history
+
+        for i in range(self.N):
+            cur_state = state[:, i, :, :]
+            cur_action = action[:, i, :].squeeze()
+            log_prob = self.feedforward_and_get_log_prob(cur_state, cur_action)
+            log_probs = log_probs + log_prob
+
+        loss = self.policy_gradient(log_probs, reward.squeeze(), reward_bl.squeeze())
+        return loss
 
     def action_selection(self, state):
         action_space = self.online_model(state)
@@ -392,12 +427,12 @@ class Trainer:
 
         return action, probability
 
-    @torch.no_grad()
-    def feedforward_and_get_prob(self, model, state):
-        policy = model(state)
-        prob = torch.max(policy)
+    def feedforward_and_get_log_prob(self, state, action):
+        probs = self.online_model(state)
+        dist = Categorical(probs)
+        log_prob = dist.log_prob(action)
 
-        return prob
+        return log_prob
 
     def td_estimate(self, state, action):
         action = action.squeeze()
