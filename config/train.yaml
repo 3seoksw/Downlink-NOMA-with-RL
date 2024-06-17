@@ -1,13 +1,13 @@
 method: "DQN"
 input_dim: 3
-hidden_dim: 32
-batch_size: 4
+hidden_dim: 256
+batch_size: 40
 num_users: 10
 num_channels: 5
 
 metric: "MSR"
-num_episodes: 40000
-num_tests: 2000
+num_episodes: 20000
+num_tests: 200
 loss_threshold: 1e-3
 
 data_dir: simulations/
