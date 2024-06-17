@@ -1,6 +1,5 @@
 import copy
 import torch
-import matplotlib.pyplot as plt
 import random
 
 from envs.core_env import BaseEnv
@@ -85,6 +84,7 @@ class Trainer:
 
         self.online_model.to(self.device)
         self.target_model.to(self.device)
+        self.max_val = 0
 
     def train_test(self):
         sum = []
@@ -180,12 +180,11 @@ class Trainer:
         avg_loss = 0
         avg_reward = 0
         max_reward = 0
-        cur_max_reward = 0
 
         episodes = tqdm(range(self.num_episodes))
         for episode in episodes:
             state, _ = self.env.reset(episode)
-            state_bl, _ = self.env_bl.reset()
+            state_bl, _ = self.env_bl.reset(episode)
             state = state.unsqueeze(0)
             state_bl = state_bl.unsqueeze(0)
 
@@ -213,38 +212,48 @@ class Trainer:
                 final_reward = reward
                 final_reward_bl = reward_bl
 
+            avg_reward += final_reward
+            max_reward = max(final_reward, final_reward_bl, max_reward)
+            self.max_val = max_reward
+
+            # NOTE: Single Policy Gradient Method:
+            # if you're up to train with random distance profiles,
+            # please make sure to comment out the following lines and go to line 238.
+            loss = 0
+            loss = self.policy_gradient(
+                log_probs, torch.tensor([final_reward]), torch.tensor([final_reward_bl])
+            )
+            avg_loss += loss
+
             self.memory.save_into_memory(
                 torch.stack(state_list),
                 torch.stack(action_list),
                 torch.tensor([final_reward], dtype=torch.float32),
                 torch.tensor([final_reward_bl], dtype=torch.float32),
             )
-            # loss = self.policy_gradient(log_probs, final_reward, final_reward_bl)
-            loss = 0
-
-            avg_reward += final_reward
-            max_reward = max(final_reward, max_reward)
-            cur_max_reward = max(final_reward, cur_max_reward)
 
             if final_reward >= final_reward_bl:
                 self.sync_networks()
 
-            if self.memory.get_len() >= 10:
-                loss = self.learn_policy()
-                avg_loss += loss
+            # NOTE: Batch Policy Gradient Method
+            # if self.memory.get_len() >= self.batch_size:
+            #     loss = self.learn_policy()
+            #     avg_loss += loss
 
             if episode % 10 == 0:
                 self.logger.log_step(value=loss, log="loss")
                 self.logger.log_step(value=final_reward, log=log_name)
 
-            if episode % 100 == 0 and episode != 0:
-                avg_loss /= 100
-                avg_reward /= 100
+            if episode % 400 == 0 and episode != 0:
+                avg_loss /= 400
+                avg_reward /= 400
                 print(f"EP: {episode}: {avg_loss}, {avg_reward}, {max_reward}")
                 self.logger.log_step(value=avg_loss, log="avg_loss")
                 self.logger.log_step(value=avg_reward, log=f"avg_{log_name}")
                 avg_loss = 0
                 avg_reward = 0
+
+        torch.save(self.target_model.state_dict(), "./weights")
 
     def action_select(self, state, state_bl):
         """Policy Gradient (REINFORCE) Method:
@@ -265,7 +274,11 @@ class Trainer:
 
     def policy_gradient(self, log_probs, reward, reward_bl):
         """REINFORCE Algorithm"""
+        reward = reward.to(self.device)
+        reward_bl = reward_bl.to(self.device)
         loss = (reward_bl - reward) * log_probs
+        # loss = (reward - reward_bl) * log_probs
+        # loss = -log_probs * reward
         loss = torch.mean(loss)
 
         self.optimizer.zero_grad()
@@ -275,7 +288,7 @@ class Trainer:
         return loss.item()
 
     def learn_policy(self):
-        log_probs = torch.zeros(self.batch_size)
+        log_probs = torch.zeros(self.batch_size).to(self.device)
         history = self.memory.sample_from_memory()
         state, action, reward, reward_bl = history
 
@@ -332,74 +345,6 @@ class Trainer:
         sum_rate = torch.tensor([sum_rate], dtype=torch.float32)
         min_rate = torch.tensor([min_rate], dtype=torch.float32)
         return sum_rate, min_rate
-
-    def train(self):
-        T_s = 5  # training stopping criterion
-        outperform_count = 0  # when the model outperforms the baseline model, +1
-        """Run training process"""
-
-        episodes = tqdm(range(self.num_episodes))
-        for episode in episodes:
-            state, info = self.env.reset()
-            # reward = torch.tensor([])
-            self.model._reset()
-
-            # Testing
-            # zeta = torch.zeros(state.shape[0], self.K * self.N, 2)
-            loss = torch.zeros(state.shape[0])  # create batch-sized loss tensor
-            steps = tqdm(
-                range(self.N - 1),
-                desc="Testing model",
-                bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
-            )
-            for _ in steps:
-                action, probability = self.one_step_feedforward(
-                    model=self.model, state=state, is_baseline=False
-                )
-                # zeta.append(state)
-                state, reward, info, done = self.env.step(action)
-
-            loss = reward
-            loss_log = torch.mean(loss)
-
-            self.logger.log_step(loss_log, "train", "Loss")
-
-            state_bl, info_bl = self.env_bl.reset()
-            self.model_bl._reset()
-
-            # Baseline
-            loss_bl = torch.zeros(state.shape[0])  # create batch-sized loss tensor
-            steps = tqdm(
-                range(self.N - 1),
-                desc="Baseline model",
-                bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
-            )
-            for _ in steps:
-                action_bl, probability_bl = self.one_step_feedforward(
-                    model=self.model_bl, state=state_bl, is_baseline=True
-                )
-                state_bl, reward_bl, info_bl, done_bl = self.env_bl.step(action_bl)
-
-            loss_bl = reward_bl / self.N
-
-            # FIXME: Consider batch
-            # if loss > loss_bl:
-            #     outperform_count += 1
-            # else:
-            #     outperform_count = 0
-            # if loss < loss_bl:
-            #     self.model_bl.load_state_dict(self.model.state_dict())
-
-            if outperform_count >= T_s:
-                break
-            else:
-                # p = self.feedforward_and_get_prob(self.model, state_bl)
-                loss = torch.mean(loss - loss_bl * torch.log(probability))
-
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-        print(reward)
 
     def one_step_feedforward(self, model, state, is_baseline: bool = False):
         """
@@ -458,33 +403,32 @@ class Trainer:
 
     def test(self):
         """Run testing process"""
-        for episode in range(self.num_tests):
-            (prev_state, state), _ = self.env.reset()
-            prev_state = prev_state.unsqueeze(0)
+        episodes = tqdm(range(self.num_tests))
+        episodes = tqdm(range(100))
+        max_reward = 0
+        avg_reward = 0
+        for episode in episodes:
+            state, _ = self.env.reset(2024 + episode)
+            state_bl, _ = self.env_bl.reset(2024 + episode)
             state = state.unsqueeze(0)
-            loss_reward = torch.zeros(state.shape[0], 1)
-            self.online_model._reset()
+            state_bl = state_bl.unsqueeze(0)
 
-            steps = tqdm(
-                range(self.N - 1),
-                desc="Testing model",
-                bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}",
-            )
-            history = []
-            for _ in steps:
-                out = self.online_model(prev_state, state)
+            final_reward_bl = 0
+            for _ in range(self.N):
+                action, log_prob, action_bl = self.action_select(state, state_bl)
 
-                pred_reward, action = torch.max(out, dim=1)
+                next_state, reward, _, _ = self.env.step(action)
+                next_state_bl, reward_bl, _, _ = self.env_bl.step(action_bl)
+                state = next_state.unsqueeze(0)
+                state_bl = next_state_bl.unsqueeze(0)
 
-                # Real Action
-                (prev_state, state), reward, info, _ = self.env.step(action)
-                prev_state = prev_state.unsqueeze(0)
-                state = state.unsqueeze(0)
+                final_reward = reward
+                final_reward_bl = reward_bl
 
-            sum_rate = 0
-            for i, info in enumerate(info["user_info"]):
-                data_rate = info["data_rate"] / 1e6
-                sum_rate = sum_rate + data_rate
+            max_reward = max(max_reward, final_reward_bl)
+            avg_reward += final_reward_bl
 
-            print(f"EP {episode}: {sum_rate}")
-        exit()
+            print(f"EP: {episode}: {final_reward_bl}, {max_reward}")
+
+        avg_reward /= self.num_tests
+        print(f"AVG: {avg_reward}")
