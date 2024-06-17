@@ -29,17 +29,25 @@ class CNN(nn.Module):
             ),
             nn.ReLU(),
             nn.Conv1d(
-                in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1
+                in_channels=hidden_dim,
+                out_channels=hidden_dim * 2,
+                kernel_size=3,
+                stride=1,
+                padding=1,
             ),
             nn.ReLU(),
             nn.Conv1d(
-                in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1
+                in_channels=hidden_dim * 2,
+                out_channels=hidden_dim,
+                kernel_size=3,
+                stride=1,
+                padding=1,
             ),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(128 * num_features, 64 * num_features),
+            nn.Linear(hidden_dim * num_features, (hidden_dim // 2) * num_features),
             nn.Tanh(),
-            nn.Linear(64 * num_features, state_size),
+            nn.Linear((hidden_dim // 2) * num_features, state_size),
         )
 
     def forward(self, state):
