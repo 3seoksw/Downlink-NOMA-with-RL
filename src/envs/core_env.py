@@ -22,7 +22,7 @@ class BaseEnv(Generic[ObsType, ActType]):
                 device = "cpu"
         self.device = torch.device(device)
 
-    def step(self, action: ActType) -> tuple[ObsType, float, dict[str, Any], bool]:
+    def step(self, action: ActType) -> tuple[ObsType, float, list, bool]:
         """
         Run one time-step of the environment.
 
@@ -37,7 +37,7 @@ class BaseEnv(Generic[ObsType, ActType]):
         """
         raise NotImplementedError
 
-    def reset(self, seed: Optional[float] = None) -> tuple[ObsType, dict[str, Any]]:
+    def reset(self, seed: Optional[float] = None) -> tuple[ObsType, list]:
         """
         Reset the environment to an initial state.
 
@@ -46,7 +46,7 @@ class BaseEnv(Generic[ObsType, ActType]):
 
         Returns:
             observation (ObsType)
-            info (dict[str, Any])
+            info (list[`n_steps`, `usr_idx_history`, `user_info`])
         """
         raise NotImplementedError
 
