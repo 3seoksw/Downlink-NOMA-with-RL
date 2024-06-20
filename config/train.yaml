@@ -1,13 +1,12 @@
 method: "Policy Gradient"
 input_dim: 3
-hidden_dim: 256
+hidden_dim: 128
 batch_size: 40
-num_users: 8
-num_channels: 4
+num_users: 6
+num_channels: 3
 
 metric: "MSR"
-num_episodes: 20000
-num_tests: 200
+num_episodes: 160000
+num_tests: 400
 loss_threshold: 1e-3
-
 data_dir: simulations/
