@@ -10,19 +10,22 @@ def train(cfg):
     device = "cpu"
 
     env = NOMA_Env(
+        input_dim=cfg.input_dim,
         num_users=cfg.num_users,
         num_channels=cfg.num_channels,
         metric=cfg.metric,
         device=device,
     )
     env_bl = NOMA_Env(
+        input_dim=cfg.input_dim,
         num_users=cfg.num_users,
         num_channels=cfg.num_channels,
+        metric=cfg.metric,
         device=device,
     )
 
     model = CNN(
-        num_features=3,
+        num_features=cfg.input_dim,
         hidden_dim=cfg.hidden_dim,
         num_users=cfg.num_users,
         num_channels=cfg.num_channels,
