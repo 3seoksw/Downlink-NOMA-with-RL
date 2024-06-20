@@ -7,12 +7,13 @@ class CNN(nn.Module):
         self,
         num_features=3,
         hidden_dim=128,
-        num_users=40,
-        num_channels=20,
+        num_users=10,
+        num_channels=5,
         device="cpu",
         method="Policy Gradient",
     ):
         super().__init__()
+        self.num_features = num_features
         self.N = num_users
         self.K = num_channels
         state_size = self.K * self.N
@@ -57,7 +58,6 @@ class CNN(nn.Module):
         out = self.net(state)
         output = out.masked_fill(mask, float("-inf"))
         if self.method == "Policy Gradient":
-            # output = nn.functional.sigmoid(output)
             output = nn.functional.softmax(output, dim=1)
 
         return output
@@ -65,24 +65,18 @@ class CNN(nn.Module):
     def get_mask(self, state):
         batch_size = state.shape[0]
 
-        # Visited indices
-        state_status = state[:, :, -1]
-        visited_idx = torch.nonzero(state_status)
-        visited_batch_indices = visited_idx[:, 0]
-        visited_state_indices = visited_idx[:, 1]
-
-        # Update masking
-        self.visited_states = torch.zeros(
-            batch_size, self.K * self.N, dtype=torch.bool, device=self.device
-        )
-        self.visited_states[visited_batch_indices, visited_state_indices] = True
-
         mask = torch.zeros(
             batch_size, self.N * self.K, dtype=torch.bool, device=self.device
         )
-        mask[self.visited_states] = True
 
-        indices = torch.nonzero(self.visited_states)
+        state_status = state[:, :, -1]
+        if self.num_features == 3:
+            indices = torch.nonzero(state_status)
+        elif self.num_features == 1:
+            indices = (state_status == 0).nonzero()
+        else:
+            raise KeyError()
+
         batch_indices = indices[:, 0]
         state_indices = indices[:, 1]
         channel_indices = state_indices // self.N
@@ -97,7 +91,8 @@ class CNN(nn.Module):
             mask[batch_idx, state_indices] = True
 
         # Channel masking
-        state_status = state[:, :, 2]
+        if self.num_features == 1:
+            state_status = ~state_status.bool()
         state_matrix = state_status.view(batch_size, self.K, self.N, -1)
         assigned_counts = state_matrix.sum(dim=-1).bool().sum(dim=-1)
         full_channels = (assigned_counts >= 2).nonzero(as_tuple=True)
