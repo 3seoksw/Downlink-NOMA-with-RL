@@ -219,11 +219,11 @@ class Trainer:
             # NOTE: Single Policy Gradient Method:
             # if you're up to train with random distance profiles,
             # please make sure to comment out the following lines and go to line 238.
-            loss = 0
-            loss = self.policy_gradient(
-                log_probs, torch.tensor([final_reward]), torch.tensor([final_reward_bl])
-            )
-            avg_loss += loss
+            # loss = 0
+            # loss = self.policy_gradient(
+            #     log_probs, torch.tensor([final_reward]), torch.tensor([final_reward_bl])
+            # )
+            # avg_loss += loss
 
             self.memory.save_into_memory(
                 torch.stack(state_list),
@@ -236,9 +236,9 @@ class Trainer:
                 self.sync_networks()
 
             # NOTE: Batch Policy Gradient Method
-            # if self.memory.get_len() >= self.batch_size:
-            #     loss = self.learn_policy()
-            #     avg_loss += loss
+            if self.memory.get_len() >= self.batch_size:
+                loss = self.learn_policy()
+                avg_loss += loss
 
             if episode % 10 == 0:
                 self.logger.log_step(value=loss, log="loss")
@@ -253,6 +253,7 @@ class Trainer:
                 avg_loss = 0
                 avg_reward = 0
 
+        self.logger.save()
         torch.save(self.target_model.state_dict(), "./weights")
 
     def action_select(self, state, state_bl):
@@ -332,20 +333,6 @@ class Trainer:
 
         return loss.item()
 
-    def calculate_actual_data_rate(self, info: dict):
-        sum_rate = 0
-        min_rate = info["user_info"][0]["data_rate"]
-        for idx in info["usr_idx_history"]:
-            usr_info = info["user_info"][idx]
-            data_rate = usr_info["data_rate"] / 1e6
-            if data_rate < min_rate:
-                min_rate = data_rate
-            sum_rate = sum_rate + data_rate
-
-        sum_rate = torch.tensor([sum_rate], dtype=torch.float32)
-        min_rate = torch.tensor([min_rate], dtype=torch.float32)
-        return sum_rate, min_rate
-
     def one_step_feedforward(self, model, state, is_baseline: bool = False):
         """
         Model feedforwards one step given some state and transits to a new timestep.
@@ -404,7 +391,6 @@ class Trainer:
     def test(self):
         """Run testing process"""
         episodes = tqdm(range(self.num_tests))
-        episodes = tqdm(range(100))
         max_reward = 0
         avg_reward = 0
         for episode in episodes:
@@ -429,6 +415,8 @@ class Trainer:
             avg_reward += final_reward_bl
 
             print(f"EP: {episode}: {final_reward_bl}, {max_reward}")
+            self.logger.log_step(final_reward_bl, "test", "sum_rate")
 
         avg_reward /= self.num_tests
+        self.logger.save()
         print(f"AVG: {avg_reward}")
