@@ -111,13 +111,13 @@ class NOMA_Env(BaseEnv):
         """
         # NOTE: if you're up to train with random distance profiles,
         # please make sure to uncomment the following lines.
-        # self.user_infos = []
-        # for i in range(self.N):
-        #     if seed is None:
-        #         user_info = self._generate_user(i)
-        #     else:
-        #         user_info = self._generate_user(i, seed + i)
-        #     self.user_infos.append(user_info)
+        self.user_infos = []
+        for i in range(self.N):
+            if seed is None:
+                user_info = self._generate_user(i)
+            else:
+                user_info = self._generate_user(i, seed + i)
+            self.user_infos.append(user_info)
 
         self.channel_info = {}
         # self.info = {"n_steps": 0, "usr_idx_history": [], "user_info": []}
@@ -135,7 +135,7 @@ class NOMA_Env(BaseEnv):
 
         self.states_copy = self.states.clone()
         cur_states = self.states_copy
-        # cur_states = self.states_copy.clone()
+        cur_states = self.states_copy.clone()
 
         return cur_states, self.info
 
