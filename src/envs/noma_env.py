@@ -52,7 +52,16 @@ class NOMA_Env(BaseEnv):
         self.const = Constants()
 
         self.device_name = device
+
         self.input_dim = input_dim
+        self.cnr_index = -1
+        if self.input_dim == 3:
+            self.cnr_index = 1
+        elif self.input_dim == 1:
+            self.cnr_index = 0
+        else:
+            raise KeyError()
+
         self.N = num_users  # 40
         self.K = num_channels  # 20
         self.bandwidth_total = B_tot  # 5 MHz (5e6 Hz)
@@ -68,8 +77,7 @@ class NOMA_Env(BaseEnv):
         self.metric = metric
 
         self.states = torch.zeros(self.K * self.N, self.input_dim).to(self.device)
-
-        # self.info = {"n_steps": 0, "usr_idx_history": [], "user_info": []}
+        self.states_copy = self.states.clone()
 
         for key, value in kwargs.items():
             if hasattr(self, key):
@@ -121,12 +129,15 @@ class NOMA_Env(BaseEnv):
             user_idx = nk % self.N
             channel_idx = nk // self.N
             self.states[nk, 0] = self.user_infos[user_idx][self.const.distance]
-            # cnr = self.get_cnr_by_usr(user_idx)
             cnr = self.get_cnr(user_idx, channel_idx)
             self.user_infos[user_idx][self.const.CNR] = cnr
-            self.states[nk, 1] = cnr / 1e4
+            self.states[nk, self.cnr_index] = cnr / 1e4
 
-        return self.states.clone(), self.info
+        self.states_copy = self.states.clone()
+        cur_states = self.states_copy
+        # cur_states = self.states_copy.clone()
+
+        return cur_states, self.info
 
     def step(self, action):
         """
@@ -148,14 +159,17 @@ class NOMA_Env(BaseEnv):
         self.user_infos[user_idx][self.const.channel] = channel_idx
         self.allocate_resources(channel_idx, user_idx)
 
-        self.info[self.const.usr_idx_history].append(user_idx)
+        # self.info[self.const.usr_idx_history].append(user_idx)
 
         # States update
-        nk = action
         channel_idx = channel_idx.item()
-        self.states[nk, 2] = len(self.channel_info[channel_idx])
+        if self.input_dim == 3:
+            # self.states[action, 2] = len(self.channel_info[channel_idx])
+            self.states_copy[action, 2] = len(self.channel_info[channel_idx])
+        elif self.input_dim == 1:
+            self.states_copy[action, self.cnr_index] = 0
 
-        curr_state = self.states.clone()
+        cur_states = self.states_copy.clone()
 
         reward = self.user_infos[user_idx][self.const.data_rate]
 
@@ -177,10 +191,10 @@ class NOMA_Env(BaseEnv):
                 reward = min_data_rate / 1e6
                 self.info[self.const.user_info] = self.user_infos
 
-        return (curr_state, reward, self.info, self.done)
+        return (cur_states, reward, self.info, self.done)
 
-    def clone(self):
-        return NOMA_Env(self.device_name, env_kwargs=self.env_kwargs)
+    # def clone(self):
+    #     return NOMA_Env(self.device_name, env_kwargs=self.env_kwargs)
 
     def allocate_power(self):
         """Allocate powers to all users and retrieve data rate"""
@@ -207,7 +221,7 @@ class NOMA_Env(BaseEnv):
             # p0, power = self.get_power(channel_idx, self.metric)
             # data_rate = self.get_data_rate(channel_idx, 1, self.metric)
 
-        cnr = self.states[state_idx, 1] * 1e4
+        cnr = self.states[state_idx, self.cnr_index] * 1e4
         self.set_cnr(user_idx, cnr)
 
     def set_cnr(self, user_idx, cnr):
@@ -219,14 +233,19 @@ class NOMA_Env(BaseEnv):
     def get_data_rate(self, channel_idx, n):
         power_0, power_1 = self.get_power(channel_idx)
         user_idx_0 = self.channel_info[channel_idx][0]
-        cnr_0 = self.states[channel_idx * self.N + user_idx_0, 1].item() * 1e4
+        cnr_0 = (
+            self.states[channel_idx * self.N + user_idx_0, self.cnr_index].item() * 1e4
+        )
         channel = self.channel_bandwidth
 
         if n == 0:
             return channel * np.log2(1 + power_0 * cnr_0)
         else:  # n == 1
             user_idx_1 = self.channel_info[channel_idx][1]
-            cnr_1 = self.states[channel_idx * self.N + user_idx_1, 1].item() * 1e4
+            cnr_1 = (
+                self.states[channel_idx * self.N + user_idx_1, self.cnr_index].item()
+                * 1e4
+            )
             return channel * np.log2(1 + (power_1 * cnr_1) / (1 + power_0 * cnr_1))
 
     def set_power(self, user_idx, power):
@@ -234,9 +253,13 @@ class NOMA_Env(BaseEnv):
 
     def get_power(self, channel_idx):
         user_idx_0 = self.channel_info[channel_idx][0]
-        cnr0 = self.states[channel_idx * self.N + user_idx_0, 1].item() * 1e4
+        cnr0 = (
+            self.states[channel_idx * self.N + user_idx_0, self.cnr_index].item() * 1e4
+        )
         user_idx_1 = self.channel_info[channel_idx][1]
-        cnr1 = self.states[channel_idx * self.N + user_idx_1, 1].item() * 1e4
+        cnr1 = (
+            self.states[channel_idx * self.N + user_idx_1, self.cnr_index].item() * 1e4
+        )
         # cnr0 = self.get_cnr(channel_idx, 0)
         # cnr1 = self.get_cnr(channel_idx, 1)
         la = self.find_lambda(power=self.total_power)
@@ -453,7 +476,7 @@ class NOMA_Env(BaseEnv):
         self.info[self.const.n_steps] = steps
 
     def init_info(self):
-        self.info = [0, 0, 0]
+        self.info = [0, [], []]
 
         self.info[self.const.n_steps] = 0
         self.info[self.const.usr_idx_history] = []
