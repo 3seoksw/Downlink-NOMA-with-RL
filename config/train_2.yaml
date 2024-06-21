@@ -1,10 +1,10 @@
 method: "Policy Gradient"
-device: "cuda"
+device: "cpu"
 input_dim: 3
 hidden_dim: 128
 batch_size: 40
-num_users: 6
-num_channels: 3
+num_users: 4
+num_channels: 2
 
 metric: "MSR"
 num_episodes: 4000
