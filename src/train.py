@@ -1,5 +1,6 @@
 import hydra
 
+from hydra.core.hydra_config import HydraConfig
 from envs.noma_env import NOMA_Env
 from model.cnn import CNN
 from trainer.trainer import Trainer
@@ -7,21 +8,21 @@ from trainer.trainer import Trainer
 
 @hydra.main(version_base=None, config_path="../config", config_name="train")
 def train(cfg):
-    device = "cpu"
+    save_dir = HydraConfig.get().runtime.output_dir
 
     env = NOMA_Env(
         input_dim=cfg.input_dim,
         num_users=cfg.num_users,
         num_channels=cfg.num_channels,
         metric=cfg.metric,
-        device=device,
+        device=cfg.device,
     )
     env_bl = NOMA_Env(
         input_dim=cfg.input_dim,
         num_users=cfg.num_users,
         num_channels=cfg.num_channels,
         metric=cfg.metric,
-        device=device,
+        device=cfg.device,
     )
 
     model = CNN(
@@ -29,7 +30,7 @@ def train(cfg):
         hidden_dim=cfg.hidden_dim,
         num_users=cfg.num_users,
         num_channels=cfg.num_channels,
-        device=device,
+        device=cfg.device,
     )
 
     trainer = Trainer(
@@ -37,13 +38,19 @@ def train(cfg):
         env_bl=env_bl,
         model=model,
         metric=cfg.metric,
-        accelerator=device,
+        accelerator=cfg.device,
         batch_size=cfg.batch_size,
         num_users=cfg.num_users,
         num_channels=cfg.num_channels,
         num_episodes=cfg.num_episodes,
         num_tests=cfg.num_tests,
+        T=cfg.T,
+        error_threshold=cfg.error_threshold,
         loss_threshold=cfg.loss_threshold,
+        save_dir=save_dir,
+        learning_rate=cfg.learning_rate,
+        validation_seeds=cfg.validation_seeds,
+        validate_every=cfg.validate_every,
     )
 
     trainer.fit()
