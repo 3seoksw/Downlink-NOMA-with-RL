@@ -328,10 +328,11 @@ class Trainer:
             self.logger.log_step(value=avg_loss, log="avg_loss")
             self.logger.log_step(value=avg_reward, log=f"avg_{log_name}")
             avg_loss = 0
+            tmp = avg_loss
             avg_reward = 0
             self.validate()
 
-            if self.counts_for_T == self.T and abs(avg_loss) <= self.loss_threshold:
+            if self.counts_for_T == self.T and abs(tmp) <= self.loss_threshold:
                 self.stopping_criteria = True
 
             if self.stopping_criteria:  # while loop break
