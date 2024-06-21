@@ -54,7 +54,7 @@ def train(cfg):
     )
 
     trainer.fit()
-    trainer.test()
+    # trainer.test()
 
 
 if __name__ == "__main__":
