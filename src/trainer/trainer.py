@@ -327,8 +327,8 @@ class Trainer:
             print(f"EP: {ep}: {avg_loss}, {avg_reward}, {min_reward} ~ {max_reward}")
             self.logger.log_step(value=avg_loss, log="avg_loss")
             self.logger.log_step(value=avg_reward, log=f"avg_{log_name}")
-            avg_loss = 0
             tmp = avg_loss
+            avg_loss = 0
             avg_reward = 0
             self.validate()
 
