@@ -332,7 +332,7 @@ class Trainer:
             avg_reward = 0
             self.validate()
 
-            if self.counts_for_T == self.T and abs(tmp) <= self.loss_threshold:
+            if self.counts_for_T >= self.T and abs(tmp) <= self.loss_threshold:
                 self.stopping_criteria = True
 
             if self.stopping_criteria:  # while loop break
