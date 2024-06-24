@@ -12,7 +12,7 @@ num_episodes: 4000
 num_tests: 400
 learning_rate: 5e-3
 loss_threshold: 1
-error_threshold: 1e-1
+error_threshold: 2e-1
 T: 1 # number of baseline model to successively success validation set
 data_dir: simulations/
 
