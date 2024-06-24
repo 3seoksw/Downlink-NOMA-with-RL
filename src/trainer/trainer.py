@@ -231,15 +231,26 @@ class Trainer:
 
             is_match = False
             error_rate = (max - reward) / (max - min)
-            if error_rate <= self.error_threshold:
+            if max == reward:
                 is_match = True
+
+            is_passed = "X"
+            if error_rate <= self.error_threshold:
                 counts += 1
-            print(f"MAX: {max}\t... {reward}\t {is_match}\t {error_rate:.4f}")
+                is_passed = "O"
+
+            print(
+                f"MAX: {max}\t... {reward}\t {is_match}\t {is_passed}\t Error: {error_rate:.4f}"
+            )
+            self.logger.log_step(
+                mode="validation", log=f"sum_rate_{seed}", value=reward
+            )
 
         if counts == len(self.validation_seeds):
             self.counts_for_T += 1
-            print("Stopping Criteria Met")
+            print(f"Validation Passed: {counts} / {len(self.validation_seeds)}")
         else:
+            print(f"Validation Failed: {counts} / {len(self.validation_seeds)}")
             self.counts_for_T = 0
 
     def fit(self):
@@ -336,6 +347,7 @@ class Trainer:
                 self.stopping_criteria = True
 
             if self.stopping_criteria:  # while loop break
+                print("Stopping Criteria Met")
                 break
 
         self.logger.save()
