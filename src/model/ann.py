@@ -24,7 +24,6 @@ class ANN(nn.Module):
         self.method = method
         self.device = device
 
-        # self.prev_state = torch.zeros(batch_size, self.N * self.K, input_dim, device=self.device)
         # Pre-encoder
         self.pre_encoder_linear = nn.Linear(num_features, hidden_dim)
 
@@ -45,7 +44,6 @@ class ANN(nn.Module):
         state = state.to(self.device)
 
         # Update masking
-        # mask = self.get_mask(state)
         mask = get_mask(state, self.num_features, self.N, self.K, self.device)
 
         # Pre-encdoer
