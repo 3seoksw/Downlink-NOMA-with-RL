@@ -23,7 +23,7 @@ class CNN(nn.Module):
 
         self.net = nn.Sequential(
             nn.Conv1d(
-                in_channels=state_size,
+                in_channels=num_features,
                 out_channels=hidden_dim,
                 kernel_size=3,
                 stride=1,
@@ -47,15 +47,16 @@ class CNN(nn.Module):
             ),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(hidden_dim * num_features, (hidden_dim // 2) * num_features),
+            nn.Linear(hidden_dim * state_size, (hidden_dim // 2) * state_size),
             nn.Tanh(),
-            nn.Linear((hidden_dim // 2) * num_features, state_size),
+            nn.Linear((hidden_dim // 2) * state_size, state_size),
         )
 
     def forward(self, state):
         state = state.to(self.device)
 
         mask = get_mask(state, self.num_features, self.N, self.K, self.device)
+        state = state.transpose(1, 2)
         out = self.net(state)
         output = out.masked_fill(mask, float("-inf"))
         if self.method == "Policy Gradient":
