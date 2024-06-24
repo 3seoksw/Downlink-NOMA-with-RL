@@ -3,6 +3,8 @@ import hydra
 from hydra.core.hydra_config import HydraConfig
 from envs.noma_env import NOMA_Env
 from model.cnn import CNN
+from model.linear import FCNN
+from model.ann import ANN
 from trainer.trainer import Trainer
 
 
@@ -25,13 +27,32 @@ def train(cfg):
         device=cfg.device,
     )
 
-    model = CNN(
-        num_features=cfg.input_dim,
-        hidden_dim=cfg.hidden_dim,
-        num_users=cfg.num_users,
-        num_channels=cfg.num_channels,
-        device=cfg.device,
-    )
+    if cfg.model == "CNN":
+        model = CNN(
+            num_features=cfg.input_dim,
+            hidden_dim=cfg.hidden_dim,
+            num_users=cfg.num_users,
+            num_channels=cfg.num_channels,
+            device=cfg.device,
+        )
+    elif cfg.model == "FCNN":
+        model = FCNN(
+            num_features=cfg.input_dim,
+            hidden_dim=cfg.hidden_dim,
+            num_users=cfg.num_users,
+            num_channels=cfg.num_channels,
+            device=cfg.device,
+        )
+    elif cfg.model == "ANN":
+        model = ANN(
+            num_features=cfg.input_dim,
+            hidden_dim=cfg.hidden_dim,
+            num_users=cfg.num_users,
+            num_channels=cfg.num_channels,
+            device=cfg.device,
+        )
+    else:
+        raise KeyError("Choose the model either `CNN`, `FCNN`, or `ANN`.")
 
     trainer = Trainer(
         env=env,
