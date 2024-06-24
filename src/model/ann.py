@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
-import numpy as np
 
-from model.base_model import BaseModel
+from utils.mask import get_mask
 
 
 class ANN(nn.Module):
@@ -10,17 +9,15 @@ class ANN(nn.Module):
 
     def __init__(
         self,
-        input_dim=3,
+        num_features=3,
         hidden_dim=128,
-        batch_size=64,
-        num_users=40,
-        num_channels=20,
+        num_users=10,
+        num_channels=5,
         method="Policy Gradient",
         device="cpu",
     ):
         super().__init__()
-        self.batch_size = batch_size
-        self.input_dim = input_dim
+        self.num_features = num_features
         self.hidden_dim = hidden_dim
         self.N = num_users
         self.K = num_channels
@@ -28,12 +25,8 @@ class ANN(nn.Module):
         self.device = device
 
         # self.prev_state = torch.zeros(batch_size, self.N * self.K, input_dim, device=self.device)
-        self.visited_states = torch.zeros(
-            batch_size, self.N * self.K, dtype=torch.bool, device=self.device
-        )
-
         # Pre-encoder
-        self.pre_encoder_linear = nn.Linear(input_dim, hidden_dim)
+        self.pre_encoder_linear = nn.Linear(num_features, hidden_dim)
 
         # Encoder (applied the Transformer's structure)
         encoder_layer = nn.TransformerEncoderLayer(
@@ -52,7 +45,8 @@ class ANN(nn.Module):
         state = state.to(self.device)
 
         # Update masking
-        mask = self.get_mask(state)
+        # mask = self.get_mask(state)
+        mask = get_mask(state, self.num_features, self.N, self.K, self.device)
 
         # Pre-encdoer
         pre_encoder = self.pre_encoder_linear(state)
@@ -88,50 +82,3 @@ class ANN(nn.Module):
             raise KeyError("Method is either `Q-Learning` or `Policy Gradient`.")
 
         return output
-
-    def get_mask(self, state):
-        batch_size = state.shape[0]
-
-        # Visited indices
-        state_status = state[:, :, -1]
-        visited_idx = torch.nonzero(state_status)
-        visited_batch_indices = visited_idx[:, 0]
-        visited_state_indices = visited_idx[:, 1]
-
-        # Update masking
-        self.visited_states = torch.zeros(
-            batch_size, self.K * self.N, dtype=torch.bool, device=self.device
-        )
-        self.visited_states[visited_batch_indices, visited_state_indices] = True
-
-        mask = torch.zeros(
-            batch_size, self.N * self.K, dtype=torch.bool, device=self.device
-        )
-        mask[self.visited_states] = True
-
-        indices = torch.nonzero(self.visited_states)
-        batch_indices = indices[:, 0]
-        state_indices = indices[:, 1]
-        channel_indices = state_indices // self.N
-        user_indices = state_indices % self.N
-
-        # User masking
-        for batch_idx, user_idx, channel_idx in zip(
-            batch_indices, user_indices, channel_indices
-        ):
-            channel_indices = torch.arange(self.K, device=self.device)
-            state_indices = user_idx + channel_indices * self.N
-            mask[batch_idx, state_indices] = True
-
-        # Channel masking
-        state_status = state[:, :, 2]
-        state_matrix = state_status.view(batch_size, self.K, self.N, -1)
-        assigned_counts = state_matrix.sum(dim=-1).bool().sum(dim=-1)
-        full_channels = (assigned_counts >= 2).nonzero(as_tuple=True)
-        for batch_idx, channel_idx in zip(*full_channels):
-            state_indices = (
-                torch.arange(self.N, device=self.device) + channel_idx * self.N
-            )
-            mask[batch_idx, state_indices] = True
-
-        return mask
