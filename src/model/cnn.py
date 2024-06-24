@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from utils.mask import get_mask
+
 
 class CNN(nn.Module):
     def __init__(
@@ -54,52 +56,10 @@ class CNN(nn.Module):
     def forward(self, state):
         state = state.to(self.device)
 
-        mask = self.get_mask(state)
+        mask = get_mask(state, self.num_features, self.N, self.K, self.device)
         out = self.net(state)
         output = out.masked_fill(mask, float("-inf"))
         if self.method == "Policy Gradient":
             output = nn.functional.softmax(output, dim=1)
 
         return output
-
-    def get_mask(self, state):
-        batch_size = state.shape[0]
-
-        mask = torch.zeros(
-            batch_size, self.N * self.K, dtype=torch.bool, device=self.device
-        )
-
-        state_status = state[:, :, -1]
-        if self.num_features == 3:
-            indices = torch.nonzero(state_status)
-        elif self.num_features == 1:
-            indices = (state_status == 0).nonzero()
-        else:
-            raise KeyError()
-
-        batch_indices = indices[:, 0]
-        state_indices = indices[:, 1]
-        channel_indices = state_indices // self.N
-        user_indices = state_indices % self.N
-
-        # User masking
-        for batch_idx, user_idx, channel_idx in zip(
-            batch_indices, user_indices, channel_indices
-        ):
-            channel_indices = torch.arange(self.K, device=self.device)
-            state_indices = user_idx + channel_indices * self.N
-            mask[batch_idx, state_indices] = True
-
-        # Channel masking
-        if self.num_features == 1:
-            state_status = ~state_status.bool()
-        state_matrix = state_status.view(batch_size, self.K, self.N, -1)
-        assigned_counts = state_matrix.sum(dim=-1).bool().sum(dim=-1)
-        full_channels = (assigned_counts >= 2).nonzero(as_tuple=True)
-        for batch_idx, channel_idx in zip(*full_channels):
-            state_indices = (
-                torch.arange(self.N, device=self.device) + channel_idx * self.N
-            )
-            mask[batch_idx, state_indices] = True
-
-        return mask
