@@ -234,7 +234,7 @@ class Trainer:
             if error_rate <= self.error_threshold:
                 is_match = True
                 counts += 1
-            print(f"MAX: {max}\t... {reward}\t {is_match}")
+            print(f"MAX: {max}\t... {reward}\t {is_match}\t {error_rate:.4f}")
 
         if counts == len(self.validation_seeds):
             self.counts_for_T += 1
