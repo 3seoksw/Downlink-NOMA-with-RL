@@ -3,7 +3,7 @@ import numpy as np
 
 from typing import Optional
 from envs.core_env import BaseEnv
-from util.constants import Constants
+from utils.constants import Constants
 
 
 class NOMA_Env(BaseEnv):
