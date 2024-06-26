@@ -1,16 +1,16 @@
 method: "Policy Gradient"
-model: "CNN"
+model: "FCNN"
 device: "cpu"
-input_dim: 3
+input_dim: 1
 hidden_dim: 128
 batch_size: 40
-num_users: 4
-num_channels: 2
+num_users: 6
+num_channels: 3
 
 metric: "MSR"
 num_episodes: 4000
 num_tests: 400
-learning_rate: 5e-3
+learning_rate: 5e-4
 loss_threshold: 1
 error_threshold: 2e-1
 T: 1 # number of baseline model to successively success validation set
