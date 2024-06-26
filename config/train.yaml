@@ -1,13 +1,22 @@
-method: "DQN"
-input_dim: 3
-hidden_dim: 32
-batch_size: 4
-num_users: 10
-num_channels: 5
+method: "Policy Gradient"
+model: "FCNN"
+device: "cpu"
+input_dim: 1
+hidden_dim: 128
+batch_size: 40
+num_users: 6
+num_channels: 3
 
 metric: "MSR"
-num_episodes: 40000
-num_tests: 2000
-loss_threshold: 1e-3
-
+num_episodes: 4000
+num_tests: 400
+learning_rate: 5e-4
+loss_threshold: 1
+error_threshold: 2e-1
+T: 1 # number of baseline model to successively success validation set
 data_dir: simulations/
+
+validate_every: 200
+num_validations: 5
+validation_seeds: [201910939, 201910931, 202015049, 201810972, 201911183]
+# validation_seeds: [2024, 2025, 2026, 2027, 2028]

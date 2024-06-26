@@ -41,10 +41,9 @@ python src/train.py
 
 ## To-Do List
 
-- [ ] ANN model: `loss.backward` is not working
+- [x] ANN model
 - [x] CNN model
 - [x] Environment
-- [ ] Vectorized Env: fix required for batch learing
 - [x] Trainer
 - [ ] Train with various distance profiles
 

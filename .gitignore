@@ -5,3 +5,7 @@ __pycache__/
 logs/
 outputs/
 simulations/
+*.pdf
+texfiles/
+preprocessed/
+weights*

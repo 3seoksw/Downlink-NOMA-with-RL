@@ -5,9 +5,7 @@ from datetime import datetime
 
 class Logger:
     def __init__(self, save_dir: str = "logs", save_every: int = 20):
-        now = datetime.now().strftime("%Y-%m-%d_%H:%M")
-        self.save_dir = os.path.join(save_dir, now)
-        os.mkdir(self.save_dir)
+        self.save_dir = save_dir
         self.save_every = save_every
         self.log = {}
         self.curr_step = 0
