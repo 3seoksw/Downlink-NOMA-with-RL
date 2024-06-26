@@ -11,7 +11,7 @@ def get_mask(state, num_features, num_users, num_channels, device):
     state_status = state[:, :, -1]
     if num_features == 3:
         indices = torch.nonzero(state_status)
-    elif num_features == 1:
+    elif num_features == 1 or num_features == 2:
         indices = (state_status == 0).nonzero()
     else:
         raise KeyError()
@@ -30,7 +30,7 @@ def get_mask(state, num_features, num_users, num_channels, device):
         mask[batch_idx, state_indices] = True
 
     # Channel masking
-    if num_features == 1:
+    if num_features == 1 or num_features == 2:
         state_status = ~state_status.bool()
     state_matrix = state_status.view(batch_size, K, N, -1)
     assigned_counts = state_matrix.sum(dim=-1).bool().sum(dim=-1)

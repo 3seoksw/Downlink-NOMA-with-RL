@@ -57,7 +57,7 @@ class NOMA_Env(BaseEnv):
         self.cnr_index = -1
         if self.input_dim == 3:
             self.cnr_index = 1
-        elif self.input_dim == 1:
+        elif self.input_dim == 1 or self.input_dim == 2:
             self.cnr_index = 0
         else:
             raise KeyError()
@@ -127,7 +127,10 @@ class NOMA_Env(BaseEnv):
         for nk in range(self.N * self.K):
             user_idx = nk % self.N
             channel_idx = nk // self.N
-            self.states[nk, 0] = self.user_infos[user_idx][self.const.distance]
+            if self.input_dim == 3:
+                self.states[nk, 0] = self.user_infos[user_idx][self.const.distance]
+            elif self.input_dim == 2:
+                self.states[nk, 1] = self.user_infos[user_idx][self.const.distance]
             cnr = self.get_cnr(user_idx, channel_idx)
             self.user_infos[user_idx][self.const.CNR] = cnr
             self.states[nk, self.cnr_index] = cnr / 1e4
@@ -162,6 +165,8 @@ class NOMA_Env(BaseEnv):
         channel_idx = channel_idx.item()
         if self.input_dim == 3:
             self.states_copy[action, 2] = len(self.channel_info[channel_idx])
+        elif self.input_dim == 2:
+            self.states_copy[action, 1] = 0
         elif self.input_dim == 1:
             self.states_copy[action, self.cnr_index] = 0
 
