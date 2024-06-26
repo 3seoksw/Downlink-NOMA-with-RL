@@ -21,7 +21,6 @@ class FCNN(nn.Module):
         self.device = device
         self.method = method
 
-        print(input_dim)
         self.network = nn.Sequential(
             nn.Flatten(),
             nn.Linear(input_dim, hidden_dim),
