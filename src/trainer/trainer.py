@@ -23,6 +23,7 @@ class Trainer:
         batch_size: int = 40,
         num_users: int = 10,
         num_channels: int = 15,
+        P_T: int = 12,
         num_epochs: int = 10,
         num_episodes: int = 10000,
         num_tests: int = 10,
@@ -45,6 +46,7 @@ class Trainer:
         self.batch_size = batch_size
         self.N = num_users
         self.K = num_channels
+        self.P_T = P_T
 
         # Testing objects
         self.env = env
@@ -71,14 +73,14 @@ class Trainer:
         preprocessed_dir = "preprocessed"
         self.preprocessed_dir = preprocessed_dir
         for seed in self.validation_seeds:
-            file_name = f"{seed}_{self.N}x{self.K}.txt"
+            file_name = f"{seed}_{self.N}x{self.K}_{self.P_T}.txt"
             file_dir = os.path.join(preprocessed_dir, file_name)
             if not os.path.exists(preprocessed_dir):
                 os.makedirs(preprocessed_dir)
             if not os.path.isfile(file_dir):
                 print(f"Preprocessing: {file_name}")
                 searcher = NOMA_Searcher(
-                    num_users=self.N, num_channels=self.K, seed=seed
+                    num_users=self.N, num_channels=self.K, P_T=self.P_T, seed=seed
                 )
                 min, avg, max = searcher.exhaustive_search()
 
@@ -125,7 +127,7 @@ class Trainer:
     def validate(self):
         counts = 0
         for seed in self.validation_seeds:
-            file_name = f"{seed}_{self.N}x{self.K}.txt"
+            file_name = f"{seed}_{self.N}x{self.K}_{self.P_T}.txt"
             file_dir = os.path.join(self.preprocessed_dir, file_name)
             with open(file_dir, "r") as f:
                 min = float(f.readline().strip("MIN: \n"))
@@ -272,7 +274,7 @@ class Trainer:
                 break
 
         self.logger.save()
-        torch.save(self.target_model.state_dict(), f"{self.save_dir}/weights")
+        torch.save(self.target_model.state_dict(), f"{self.save_dir}/weights.pth")
 
     def action_select(self, state, state_bl):
         """Policy Gradient (REINFORCE) Method:
