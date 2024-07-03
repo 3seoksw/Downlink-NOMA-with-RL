@@ -10,17 +10,21 @@ class NOMA_Searcher:
         self,
         num_users: int = 6,
         num_channels: int = 3,
+        P_T: int = 12,
         seed: float = 2024,
     ):
         self.N = num_users
         self.K = num_channels
         self.seed = seed
-        self.env = NOMA_Env(num_users=self.N, num_channels=self.K)
+        self.env = NOMA_Env(num_users=self.N, num_channels=self.K, P_T=P_T)
 
     def set_NK(self, num_users: int, num_channels):
         self.N = num_users
         self.K = num_channels
         assert self.K * 2 == self.N
+
+    def set_seed(self, seed: float):
+        self.seed = seed
 
     def _generate_all_pairs(self, users: list):
         if len(users) < 2:
