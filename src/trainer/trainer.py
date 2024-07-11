@@ -200,6 +200,11 @@ class Trainer:
                 ep += 1
                 state, _ = self.env.reset(ep)
                 state_bl, _ = self.env_bl.reset(ep)
+
+                if self.is_imperfect_csi:
+                    state = corrupt_state(state, 0.1)
+                    state_bl = corrupt_state(state_bl, 0.1)
+
                 state = state.unsqueeze(0)
                 state_bl = state_bl.unsqueeze(0)
 
@@ -221,6 +226,11 @@ class Trainer:
 
                     next_state, reward, _, _ = self.env.step(action)
                     next_state_bl, reward_bl, _, _ = self.env_bl.step(action_bl)
+
+                    if self.is_imperfect_csi:
+                        next_state = corrupt_state(next_state, 0.1)
+                        next_state_bl = corrupt_state(next_state_bl, 0.1)
+
                     state = next_state.unsqueeze(0)
                     state_bl = next_state_bl.unsqueeze(0)
 
