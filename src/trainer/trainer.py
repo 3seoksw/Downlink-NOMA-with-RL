@@ -9,6 +9,7 @@ from trainer.policy_memory import PolicyMemory
 from validation.exhaustive_search import NOMA_Searcher
 from tqdm import tqdm
 from torch.distributions import Categorical
+from utils.imperfect_csi import corrupt_state
 
 
 class Trainer:
@@ -36,6 +37,7 @@ class Trainer:
         save_every: int = 10,
         method: str = "Policy Gradient",
         learning_rate: float = 1e-4,
+        is_imperfect_csi: bool = False,
     ):
         """
         Creates two sets of training-purpose objects: baseline objects and testing objects.
@@ -124,6 +126,8 @@ class Trainer:
         self.max_val = 0
         self.min_val = 1000
 
+        self.is_imperfect_csi = is_imperfect_csi
+
     def validate(self):
         counts = 0
         for seed in self.validation_seeds:
@@ -135,6 +139,8 @@ class Trainer:
                 max = float(f.readline().strip("MAX: \n"))
 
             state, info = self.env.reset(seed)
+            if self.is_imperfect_csi:
+                state = corrupt_state(state, 0.1)
 
             reward = 0
             for _ in range(self.N):
@@ -143,6 +149,8 @@ class Trainer:
                 action = torch.argmax(probs)
 
                 state, reward, info, done = self.env.step(action)
+                if self.is_imperfect_csi:
+                    state = corrupt_state(state, 0.1)
 
             if reward == 0:
                 raise KeyError
