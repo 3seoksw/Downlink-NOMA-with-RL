@@ -12,6 +12,7 @@ class FCNN(nn.Module):
         num_channels=5,
         device="cpu",
         method="Policy Gradient",
+        dropout=0.0,
     ):
         super().__init__()
         self.num_features = num_features
@@ -21,20 +22,38 @@ class FCNN(nn.Module):
         self.device = device
         self.method = method
 
-        self.network = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim * 2),
-            nn.ReLU(),
-            nn.Linear(hidden_dim * 2, hidden_dim * 4),
-            nn.ReLU(),
-            nn.Linear(hidden_dim * 4, hidden_dim * 2),
-            nn.ReLU(),
-            nn.Linear(hidden_dim * 2, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, self.N * self.K),
-        )
+        if dropout == 0:
+            self.network = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(input_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim * 2),
+                nn.ReLU(),
+                nn.Linear(hidden_dim * 2, hidden_dim * 4),
+                nn.ReLU(),
+                nn.Linear(hidden_dim * 4, hidden_dim * 2),
+                nn.ReLU(),
+                nn.Linear(hidden_dim * 2, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, self.N * self.K),
+            )
+        else:
+            print("Dropout Layer Activated")
+            self.network = nn.Sequential(
+                nn.Dropout(p=dropout),
+                nn.Flatten(),
+                nn.Linear(input_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim * 2),
+                nn.ReLU(),
+                nn.Linear(hidden_dim * 2, hidden_dim * 4),
+                nn.ReLU(),
+                nn.Linear(hidden_dim * 4, hidden_dim * 2),
+                nn.ReLU(),
+                nn.Linear(hidden_dim * 2, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, self.N * self.K),
+            )
 
     def forward(self, state):
         state = state.to(self.device)
