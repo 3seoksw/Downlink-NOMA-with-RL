@@ -1,11 +1,12 @@
 method: "Policy Gradient"
 model: "FCNN"
 device: "cpu"
-input_dim: 1
+input_dim: 3
 hidden_dim: 128
 batch_size: 40
 num_users: 6
 num_channels: 3
+P_T: 2
 
 metric: "MSR"
 num_episodes: 4000

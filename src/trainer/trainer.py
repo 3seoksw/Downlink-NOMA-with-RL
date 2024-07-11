@@ -1,6 +1,5 @@
 import copy
 import torch
-import random
 import os
 
 from envs.core_env import BaseEnv
@@ -24,6 +23,7 @@ class Trainer:
         batch_size: int = 40,
         num_users: int = 10,
         num_channels: int = 15,
+        P_T: int = 12,
         num_epochs: int = 10,
         num_episodes: int = 10000,
         num_tests: int = 10,
@@ -46,6 +46,7 @@ class Trainer:
         self.batch_size = batch_size
         self.N = num_users
         self.K = num_channels
+        self.P_T = P_T
 
         # Testing objects
         self.env = env
@@ -72,14 +73,14 @@ class Trainer:
         preprocessed_dir = "preprocessed"
         self.preprocessed_dir = preprocessed_dir
         for seed in self.validation_seeds:
-            file_name = f"{seed}_{self.N}x{self.K}.txt"
+            file_name = f"{seed}_{self.N}x{self.K}_{self.P_T}.txt"
             file_dir = os.path.join(preprocessed_dir, file_name)
             if not os.path.exists(preprocessed_dir):
                 os.makedirs(preprocessed_dir)
             if not os.path.isfile(file_dir):
                 print(f"Preprocessing: {file_name}")
                 searcher = NOMA_Searcher(
-                    num_users=self.N, num_channels=self.K, seed=seed
+                    num_users=self.N, num_channels=self.K, P_T=self.P_T, seed=seed
                 )
                 min, avg, max = searcher.exhaustive_search()
 
@@ -123,93 +124,10 @@ class Trainer:
         self.max_val = 0
         self.min_val = 1000
 
-    def train_test(self):
-        sum = []
-        episodes = tqdm(range(self.num_episodes))
-        for episode in episodes:
-            if episode % self.sync_every == 0:
-                self.sync_networks()
-
-            state, _ = self.env.reset()
-            state = state.unsqueeze(0)
-
-            history = []
-            for _ in range(self.N):
-                out = self.online_model(state)
-
-                # NOTE: Action (with `Online` network)
-                valid_actions_mask = out != float("-inf")
-                valid_actions_mask = valid_actions_mask.view(-1)
-                valid_indices = torch.nonzero(valid_actions_mask)
-
-                # Exploration
-                if torch.rand(1) < self.epsilon:
-                    action = random.choice(valid_indices)
-                # Exploitation
-                else:
-                    pred_reward, action = torch.max(out, dim=1)
-                self.epsilon = self.epsilon * self.epsilon_decay
-                self.epsilon = max(self.epsilon_min, self.epsilon)
-
-                # history.append([prev_state.clone(), state.clone(), torch.tensor([action])])
-
-                # Action
-                # (prev_state, state), reward, info, _ = self.env.step(action)
-                next_state, reward, info, done = self.env.step(action)
-                history.append(
-                    [
-                        state,
-                        next_state,
-                        torch.tensor([action]),
-                        torch.tensor([done]),
-                    ]
-                )
-
-                state = next_state.unsqueeze(0)
-
-                # NOTE: Learn
-                if self.buffer.get_len() >= 1e2:
-                    m_state, m_next_state, m_action, m_done, m_reward = (
-                        self.buffer.sample_from_memory()
-                    )
-
-                    m_reward = m_reward.squeeze(1).to(self.device)
-                    expected_reward = self.td_estimate(m_state, m_action)
-                    target_reward = self.td_target(m_reward, m_next_state, m_done)
-
-                    # loss = self.loss_func(expected_reward, m_reward)
-                    loss = self.loss_func(expected_reward, target_reward)
-
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
-
-            sum_rate = 0
-            for i, idx in enumerate(info["usr_idx_history"]):
-                usr_info = info["user_info"][idx]
-                data_rate = usr_info["data_rate"] / 1e6
-                data_rate = torch.tensor([data_rate], dtype=torch.float32)
-                sum_rate = sum_rate + data_rate
-
-                # print(idx.item(), usr_info["channel"], data_rate, usr_info["power"], usr_info["distance"], usr_info["CNR"])
-                history[i].append(data_rate)
-                m_state = history[i][0]
-                m_next_state = history[i][1]
-                m_action = history[i][2]
-                m_done = history[i][3]
-                m_reward = history[i][4]
-                self.buffer.save_into_memory(
-                    m_state, m_next_state, m_action, m_done, m_reward
-                )
-
-            if episode % 100 == 0 and self.buffer.get_len() >= 1e2:
-                sum.append(sum_rate)
-                print(f"EP {episode}: {loss}, {sum_rate}")
-
     def validate(self):
         counts = 0
         for seed in self.validation_seeds:
-            file_name = f"{seed}_{self.N}x{self.K}.txt"
+            file_name = f"{seed}_{self.N}x{self.K}_{self.P_T}.txt"
             file_dir = os.path.join(self.preprocessed_dir, file_name)
             with open(file_dir, "r") as f:
                 min = float(f.readline().strip("MIN: \n"))
@@ -248,9 +166,9 @@ class Trainer:
 
         if counts == len(self.validation_seeds):
             self.counts_for_T += 1
-            print(f"Validation Passed: {counts} / {len(self.validation_seeds)}")
+            print(f" └─ Validation Passed: {counts} / {len(self.validation_seeds)}")
         else:
-            print(f"Validation Failed: {counts} / {len(self.validation_seeds)}")
+            print(f" └─ Validation Failed: {counts} / {len(self.validation_seeds)}")
             self.counts_for_T = 0
 
     def fit(self):
@@ -267,6 +185,7 @@ class Trainer:
         min_reward = 1000
 
         ep = -1
+        counts_for_loss = 0
         while True:
             episodes = tqdm(range(self.validate_every))
             for episode in episodes:
@@ -305,15 +224,6 @@ class Trainer:
                 min_reward = min(final_reward, final_reward_bl, min_reward)
                 self.max_val = max_reward
 
-                # NOTE: Single Policy Gradient Method:
-                # if you're up to train with random distance profiles,
-                # please make sure to comment out the following lines and go to line 238.
-                # loss = 0
-                # loss = self.policy_gradient(
-                #     log_probs, torch.tensor([final_reward]), torch.tensor([final_reward_bl])
-                # )
-                # avg_loss += loss
-
                 self.memory.save_into_memory(
                     torch.stack(state_list),
                     torch.stack(action_list),
@@ -336,6 +246,19 @@ class Trainer:
             avg_loss /= self.validate_every
             avg_reward /= self.validate_every
             print(f"EP: {ep}: {avg_loss}, {avg_reward}, {min_reward} ~ {max_reward}")
+
+            if avg_loss == 0:
+                counts_for_loss += 1
+            else:
+                counts_for_loss = 0
+
+            if counts_for_loss == 10:
+                print("Training break")
+                break
+
+            elapsed = episodes.format_dict["elapsed"]
+
+            self.logger.log_step(value=elapsed, log="time_elapsed")
             self.logger.log_step(value=avg_loss, log="avg_loss")
             self.logger.log_step(value=avg_reward, log=f"avg_{log_name}")
             tmp = avg_loss
@@ -351,7 +274,7 @@ class Trainer:
                 break
 
         self.logger.save()
-        torch.save(self.target_model.state_dict(), f"{self.save_dir}/weights")
+        torch.save(self.target_model.state_dict(), f"{self.save_dir}/weights.pth")
 
     def action_select(self, state, state_bl):
         """Policy Gradient (REINFORCE) Method:
@@ -399,88 +322,12 @@ class Trainer:
         loss = self.policy_gradient(log_probs, reward.squeeze(), reward_bl.squeeze())
         return loss
 
-    def action_selection(self, state):
-        action_space = self.online_model(state)
-
-        valid_actions_mask = action_space != float("-inf")
-        valid_actions_mask = valid_actions_mask.view(-1)
-        valid_indices = torch.nonzero(valid_actions_mask)
-
-        # Exploration
-        if torch.rand(1) < self.epsilon:
-            action = random.choice(valid_indices)
-        # Exploitation
-        else:
-            pred_reward, action = torch.max(action_space, dim=1)
-
-        self.epsilon = self.epsilon * self.epsilon_decay
-        self.epsilon = max(self.epsilon_min, self.epsilon)
-
-        return action
-
-    def learn(self):
-        state, next_state, action, done, reward = self.buffer.sample_from_memory()
-        td_estimate = self.td_estimate(state, action)
-        td_target = self.td_target(reward, next_state, done)
-
-        loss = self.loss_func(td_estimate, td_target)
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-
-        return loss.item()
-
-    def one_step_feedforward(self, model, state, is_baseline: bool = False):
-        """
-        Model feedforwards one step given some state and transits to a new timestep.
-        This is to differ baseline model and testing model.
-
-        Args:
-            model (BaseModel(nn.Module))
-            state
-            is_baseline (bool=False): to differ baseline model and testing model.
-
-        Returns:
-            chosen_state
-            chosen_user_idx
-            chosen_channel_idx
-        """
-        policy = model(state)
-
-        if is_baseline:
-            action = torch.argmax(policy, dim=1)
-        else:
-            action = torch.multinomial(policy, 1).squeeze(1)
-
-        probability = policy[torch.arange(policy.size(0)), action]
-
-        return action, probability
-
     def feedforward_and_get_log_prob(self, state, action):
         probs = self.online_model(state)
         dist = Categorical(probs)
         log_prob = dist.log_prob(action)
 
         return log_prob
-
-    def td_estimate(self, state, action):
-        action = action.squeeze()
-        return self.online_model(state)[torch.arange(0, self.batch_size), action]
-
-    @torch.no_grad()
-    def td_target(self, reward, next_state, done):
-        reward = reward.to(self.device).squeeze(1)
-        done = done.to(self.device).squeeze(1)
-        next_state_reward = self.target_model(next_state)
-        pred_reward, action = torch.max(next_state_reward, dim=1)
-        # next_reward = self.online_model(state, next_state)
-
-        next_reward = self.online_model(next_state)[
-            torch.arange(0, self.batch_size), action
-        ]
-        next_reward = torch.where(done, torch.tensor(0), next_reward)
-        val = reward + next_reward
-        return val
 
     def sync_networks(self):
         self.target_model.load_state_dict(self.online_model.state_dict())

@@ -16,6 +16,7 @@ def train(cfg):
         input_dim=cfg.input_dim,
         num_users=cfg.num_users,
         num_channels=cfg.num_channels,
+        P_T=cfg.P_T,
         metric=cfg.metric,
         device=cfg.device,
     )
@@ -23,6 +24,7 @@ def train(cfg):
         input_dim=cfg.input_dim,
         num_users=cfg.num_users,
         num_channels=cfg.num_channels,
+        P_T=cfg.P_T,
         metric=cfg.metric,
         device=cfg.device,
     )
@@ -63,6 +65,7 @@ def train(cfg):
         batch_size=cfg.batch_size,
         num_users=cfg.num_users,
         num_channels=cfg.num_channels,
+        P_T=cfg.P_T,
         num_episodes=cfg.num_episodes,
         num_tests=cfg.num_tests,
         T=cfg.T,
