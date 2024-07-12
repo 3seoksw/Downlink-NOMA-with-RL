@@ -1,15 +1,13 @@
 method: "Policy Gradient"
 model: "FCNN"
 device: "cpu"
+use_experience_replay: True
 input_dim: 3
 hidden_dim: 128
 batch_size: 40
 num_users: 6
 num_channels: 3
 P_T: 12
-
-is_imperfect_csi: True
-dropout: 0.0
 
 metric: "MSR"
 num_episodes: 4000
