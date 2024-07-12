@@ -10,33 +10,34 @@ def get_mask(state, num_features, num_users, num_channels, device):
 
     state_status = state[:, :, -1]
     if num_features == 3:
-        indices = torch.nonzero(state_status)
+        indices = torch.nonzero(state_status, as_tuple=True)
     elif num_features == 1 or num_features == 2:
-        indices = (state_status == 0).nonzero()
+        indices = torch.nonzero(state_status == 0, as_tuple=True)
     else:
         raise KeyError()
 
-    batch_indices = indices[:, 0]
-    state_indices = indices[:, 1]
-    channel_indices = state_indices // N
+    batch_indices, state_indices = indices
     user_indices = state_indices % N
 
     # User masking
-    for batch_idx, user_idx, channel_idx in zip(
-        batch_indices, user_indices, channel_indices
-    ):
-        channel_indices = torch.arange(K, device=device)
-        state_indices = user_idx + channel_indices * N
-        mask[batch_idx, state_indices] = True
+    user_state_indices = (
+        user_indices.unsqueeze(1) + torch.arange(K, device=device).unsqueeze(0) * N
+    )
+    mask[batch_indices.unsqueeze(1), user_state_indices] = True
 
     # Channel masking
     if num_features == 1 or num_features == 2:
         state_status = ~state_status.bool()
-    state_matrix = state_status.view(batch_size, K, N, -1)
-    assigned_counts = state_matrix.sum(dim=-1).bool().sum(dim=-1)
-    full_channels = (assigned_counts >= 2).nonzero(as_tuple=True)
-    for batch_idx, channel_idx in zip(*full_channels):
-        state_indices = torch.arange(N, device=device) + channel_idx * N
-        mask[batch_idx, state_indices] = True
+    state_matrix = state_status.view(batch_size, K, N)
+    assigned_counts = state_matrix.sum(dim=-1) >= 2
+    full_channels = assigned_counts.nonzero(as_tuple=True)
+
+    if len(full_channels[0]) > 0:
+        full_batch_indices, full_channel_indices = full_channels
+        full_state_indices = (
+            torch.arange(N, device=device).unsqueeze(0)
+            + full_channel_indices.unsqueeze(1) * N
+        )
+        mask[full_batch_indices.unsqueeze(1), full_state_indices] = True
 
     return mask
