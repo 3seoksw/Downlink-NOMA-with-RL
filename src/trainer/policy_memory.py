@@ -5,9 +5,10 @@ from collections import deque
 
 
 class PolicyMemory:
-    def __init__(self, batch_size=40):
+    def __init__(self, batch_size=40, use_experience_replay=True):
         self.buffer = deque(maxlen=10000)
         self.batch_size = batch_size
+        self.use_experience_replay = use_experience_replay
 
     def save_into_memory(self, state, action, reward, reward_bl):
         self.buffer.append(
@@ -20,7 +21,15 @@ class PolicyMemory:
         )
 
     def sample_from_memory(self):
-        batch = random.sample(self.buffer, self.batch_size)
+        if self.use_experience_replay:
+            if len(self.buffer) < self.batch_size:
+                raise ValueError()
+            batch = []
+            for _ in range(self.batch_size):
+                batch.append(self.buffer.popleft())
+        else:
+            batch = random.sample(self.buffer, self.batch_size)
+
         states, actions, rewards, rewards_bl = map(torch.stack, zip(*batch))
         return states, actions, rewards, rewards_bl
 
