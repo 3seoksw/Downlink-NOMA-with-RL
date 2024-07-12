@@ -21,7 +21,7 @@ class PolicyMemory:
         )
 
     def sample_from_memory(self):
-        if self.use_experience_replay:
+        if not self.use_experience_replay:
             if len(self.buffer) < self.batch_size:
                 raise ValueError()
             batch = []
