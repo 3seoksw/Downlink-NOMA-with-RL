@@ -43,7 +43,6 @@ def train(cfg):
             hidden_dim=cfg.hidden_dim,
             num_users=cfg.num_users,
             num_channels=cfg.num_channels,
-            dropout=cfg.dropout,
             device=cfg.device,
         )
     elif cfg.model == "ANN":
@@ -64,6 +63,7 @@ def train(cfg):
         metric=cfg.metric,
         accelerator=cfg.device,
         batch_size=cfg.batch_size,
+        use_experience_replay=cfg.use_experience_replay,
         num_users=cfg.num_users,
         num_channels=cfg.num_channels,
         P_T=cfg.P_T,
@@ -76,7 +76,6 @@ def train(cfg):
         learning_rate=cfg.learning_rate,
         validation_seeds=cfg.validation_seeds,
         validate_every=cfg.validate_every,
-        is_imperfect_csi=cfg.is_imperfect_csi,
     )
 
     trainer.fit()
