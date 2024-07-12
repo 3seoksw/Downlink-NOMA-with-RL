@@ -298,8 +298,10 @@ class NOMA_Env(BaseEnv):
             for channel_idx in range(self.K):
                 A = self.get_A(channel_idx)
                 cnr0, cnr1 = self.get_cnrs_by_channel(channel_idx)
+                gamma_k = self.get_gamma_k(channel_idx)
                 if self.metric == "MSR":
                     q_k = self.get_msr_power_budget(cnr0, cnr1, A, la)
+                    q_k = max(q_k, gamma_k)
                 elif self.metric == "MMR":
                     q_k = self.get_mmr_power_budget(cnr0, cnr1, la)
                 else:
