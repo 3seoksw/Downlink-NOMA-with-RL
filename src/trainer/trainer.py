@@ -9,7 +9,6 @@ from trainer.policy_memory import PolicyMemory
 from validation.exhaustive_search import NOMA_Searcher
 from tqdm import tqdm
 from torch.distributions import Categorical
-from utils.imperfect_csi import corrupt_state
 
 
 class Trainer:
@@ -25,6 +24,7 @@ class Trainer:
         num_users: int = 10,
         num_channels: int = 15,
         P_T: int = 12,
+        use_experience_replay: bool = True,
         num_epochs: int = 10,
         num_episodes: int = 10000,
         num_tests: int = 10,
@@ -37,7 +37,6 @@ class Trainer:
         save_every: int = 10,
         method: str = "Policy Gradient",
         learning_rate: float = 1e-4,
-        is_imperfect_csi: bool = False,
     ):
         """
         Creates two sets of training-purpose objects: baseline objects and testing objects.
@@ -49,6 +48,7 @@ class Trainer:
         self.N = num_users
         self.K = num_channels
         self.P_T = P_T
+        self.use_experience_replay = use_experience_replay
 
         # Testing objects
         self.env = env
@@ -63,7 +63,9 @@ class Trainer:
         self.save_dir = save_dir
         self.logger = Logger(save_dir=save_dir, save_every=save_every)
         self.buffer = ReplayMemory(batch_size=self.batch_size)
-        self.memory = PolicyMemory(batch_size=self.batch_size)
+        self.memory = PolicyMemory(
+            batch_size=self.batch_size, use_experience_replay=use_experience_replay
+        )
 
         self.num_epochs = num_epochs
         self.num_episodes = num_episodes
@@ -126,8 +128,6 @@ class Trainer:
         self.max_val = 0
         self.min_val = 1000
 
-        self.is_imperfect_csi = is_imperfect_csi
-
     def validate(self):
         counts = 0
         for seed in self.validation_seeds:
@@ -139,8 +139,6 @@ class Trainer:
                 max = float(f.readline().strip("MAX: \n"))
 
             state, info = self.env.reset(seed)
-            if self.is_imperfect_csi:
-                state = corrupt_state(state, 0.1)
 
             reward = 0
             for _ in range(self.N):
@@ -149,8 +147,6 @@ class Trainer:
                 action = torch.argmax(probs)
 
                 state, reward, info, done = self.env.step(action)
-                if self.is_imperfect_csi:
-                    state = corrupt_state(state, 0.1)
 
             if reward == 0:
                 raise KeyError
@@ -201,10 +197,6 @@ class Trainer:
                 state, _ = self.env.reset(ep)
                 state_bl, _ = self.env_bl.reset(ep)
 
-                if self.is_imperfect_csi:
-                    state = corrupt_state(state, 0.1)
-                    state_bl = corrupt_state(state_bl, 0.1)
-
                 state = state.unsqueeze(0)
                 state_bl = state_bl.unsqueeze(0)
 
@@ -227,10 +219,6 @@ class Trainer:
                     next_state, reward, _, _ = self.env.step(action)
                     next_state_bl, reward_bl, _, _ = self.env_bl.step(action_bl)
 
-                    if self.is_imperfect_csi:
-                        next_state = corrupt_state(next_state, 0.1)
-                        next_state_bl = corrupt_state(next_state_bl, 0.1)
-
                     state = next_state.unsqueeze(0)
                     state_bl = next_state_bl.unsqueeze(0)
 
@@ -252,16 +240,19 @@ class Trainer:
                 if final_reward >= final_reward_bl:
                     self.sync_networks()
 
-                # NOTE: Batch Policy Gradient Method
                 if self.memory.get_len() >= self.batch_size:
                     loss = self.learn_policy()
                     avg_loss += loss
 
                 if ep % 10 == 0:
-                    self.logger.log_step(value=loss, log="loss")
+                    if loss is not None:
+                        self.logger.log_step(value=loss, log="loss")
                     self.logger.log_step(value=final_reward, log=log_name)
 
-            avg_loss /= self.validate_every
+            if self.use_experience_replay:
+                avg_loss /= self.validate_every
+            else:
+                avg_loss /= self.validate_every / self.batch_size
             avg_reward /= self.validate_every
             print(f"EP: {ep}: {avg_loss}, {avg_reward}, {min_reward} ~ {max_reward}")
 
