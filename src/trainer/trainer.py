@@ -259,6 +259,7 @@ class Trainer:
             else:
                 counts_for_loss = 0
 
+            counts_for_loss = 0
             if counts_for_loss == 10:
                 print("Training break")
                 break
