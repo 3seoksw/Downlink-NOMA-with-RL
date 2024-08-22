@@ -277,6 +277,7 @@ class Trainer:
 
             if self.counts_for_T >= self.T and abs(tmp) <= self.loss_threshold:
                 self.stopping_criteria = True
+            self.stopping_criteria = False
 
             if self.stopping_criteria:  # while loop break
                 print("Stopping Criteria Met")
