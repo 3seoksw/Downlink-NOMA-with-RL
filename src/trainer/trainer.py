@@ -18,6 +18,7 @@ class Trainer:
         env_bl: BaseEnv,
         model: torch.nn.Module,
         validation_seeds: list,
+        temp_episodes: int,
         metric: str = "MSR",
         accelerator: str = "cpu",
         batch_size: int = 40,
@@ -41,6 +42,9 @@ class Trainer:
         Creates two sets of training-purpose objects: baseline objects and testing objects.
         Each comprises `env` and `model`.
         """
+        self.temp_train_end = False
+        self.temp = 0
+        self.temp_episodes = temp_episodes
         self.method = method
 
         self.batch_size = batch_size
@@ -187,6 +191,9 @@ class Trainer:
         ep = -1
         counts_for_loss = 0
         while True:
+            if self.temp_train_end:
+                break
+            self.temp += 1
             episodes = tqdm(range(self.validate_every))
             for episode in episodes:
                 ep += 1
@@ -259,6 +266,8 @@ class Trainer:
             elapsed = episodes.format_dict["elapsed"]
 
             self.logger.log_step(value=elapsed, log="time_elapsed")
+            if self.temp == self.temp_episodes:
+                self.temp_train_end = True
             self.logger.log_step(value=avg_loss, log="avg_loss")
             self.logger.log_step(value=avg_reward, log=f"avg_{log_name}")
             tmp = avg_loss

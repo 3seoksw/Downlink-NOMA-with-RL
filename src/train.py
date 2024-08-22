@@ -60,6 +60,7 @@ def train(cfg):
         env=env,
         env_bl=env_bl,
         model=model,
+        temp_episodes=cfg.temp_episodes,
         metric=cfg.metric,
         accelerator=cfg.device,
         batch_size=cfg.batch_size,

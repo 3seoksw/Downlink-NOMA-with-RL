@@ -6,12 +6,13 @@ hidden_dim: 128
 batch_size: 40
 num_users: 6
 num_channels: 3
-P_T: 2
+P_T: 12
 
 metric: "MSR"
 num_episodes: 4000
 num_tests: 400
-learning_rate: 5e-4
+learning_rate: 1e-4
+temp_episodes: 2
 loss_threshold: 1
 error_threshold: 2e-1
 T: 1 # number of baseline model to successively success validation set
