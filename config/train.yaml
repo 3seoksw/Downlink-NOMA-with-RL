@@ -6,7 +6,7 @@ hidden_dim: 128
 batch_size: 40
 num_users: 6
 num_channels: 3
-P_T: 2
+P_T: 12
 
 metric: "MSR"
 num_episodes: 4000
@@ -20,4 +20,3 @@ data_dir: simulations/
 validate_every: 200
 num_validations: 5
 validation_seeds: [201910939, 201910931, 202015049, 201810972, 201911183]
-# validation_seeds: [2024, 2025, 2026, 2027, 2028]
