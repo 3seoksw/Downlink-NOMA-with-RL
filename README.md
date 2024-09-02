@@ -1,6 +1,3 @@
-> [!NOTE]
-> Currently in progress of development!
-
 # Downlink Non-Orthogonal Multiple Access (NOMA) with Reinforcement Learning (RL)
 
 This project is built based on the following paper: [[1]](#1).
@@ -45,7 +42,7 @@ python src/train.py
 - [x] CNN model
 - [x] Environment
 - [x] Trainer
-- [ ] Train with various distance profiles
+- [x] Train with various distance profiles
 
 <a id="1" href="https://ieeexplore.ieee.org/abstract/document/8790780">[1]</a>
 He, Chaofan, Yang Hu, Yan Chen, and Bing Zeng. "Joint power allocation and channel assignment for NOMA with deep reinforcement learning."
