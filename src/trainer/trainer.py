@@ -36,6 +36,7 @@ class Trainer:
         save_every: int = 10,
         method: str = "Policy Gradient",
         learning_rate: float = 1e-4,
+        use_experience_replay: bool = True,
     ):
         """
         Creates two sets of training-purpose objects: baseline objects and testing objects.
@@ -60,8 +61,8 @@ class Trainer:
         self.metric = metric  # "MSR" or "MMR"
         self.save_dir = save_dir
         self.logger = Logger(save_dir=save_dir, save_every=save_every)
-        self.buffer = ReplayMemory(batch_size=self.batch_size)
-        self.memory = PolicyMemory(batch_size=self.batch_size)
+        self.use_experience_replay = use_experience_replay
+        self.memory = PolicyMemory(self.batch_size, self.use_experience_replay)
 
         self.num_epochs = num_epochs
         self.num_episodes = num_episodes
@@ -239,13 +240,19 @@ class Trainer:
                     loss = self.learn_policy()
                     avg_loss += loss
 
-                if ep % 10 == 0:
+                if loss is not None and ep % 10 == 0:
                     self.logger.log_step(value=loss, log="loss")
                     self.logger.log_step(value=final_reward, log=log_name)
 
-            avg_loss /= self.validate_every
-            avg_reward /= self.validate_every
-            print(f"EP: {ep}: {avg_loss}, {avg_reward}, {min_reward} ~ {max_reward}")
+            if self.use_experience_replay:
+                num_trains = self.validate_every
+            else:
+                num_trains = self.validate_every // self.batch_size
+            avg_loss /= num_trains
+            avg_reward /= num_trains
+            print(
+                f"EP: {ep}: {avg_loss}, {avg_reward}, {min_reward} ~ {max_reward} ({num_trains})"
+            )
 
             if avg_loss == 0:
                 counts_for_loss += 1
@@ -298,8 +305,6 @@ class Trainer:
         reward = reward.to(self.device)
         reward_bl = reward_bl.to(self.device)
         loss = (reward_bl - reward) * log_probs
-        # loss = (reward - reward_bl) * log_probs
-        # loss = -log_probs * reward
         loss = torch.mean(loss)
 
         self.optimizer.zero_grad()
