@@ -1,6 +1,11 @@
 # Downlink Non-Orthogonal Multiple Access (NOMA) with Reinforcement Learning (RL)
 
-This project is built based on the following paper: [[1]](#1).
+> [!IMPORTANT]
+> The following work has been accepted and published in _The Journal of Korean Institute of Communication and Information Sciences (JKICS)_!
+>
+> If you are interested, please check out the paper [here](https://journal.kics.or.kr/digital-library/102248).
+
+## Introduction
 
 In recent years, the Non-Orthogonal Multiple Access (NOMA) system has been considered as a promising candidate for a multiple access framework due to its performance allowing multiple users to access to channels at the same time.
 Nevertheless, NOMA system has few limitations since the problem of allocating the resources (i.e. channels and powers) to users is considered to be [NP-hard](https://en.wikipedia.org/wiki/NP-hardness).
@@ -36,13 +41,24 @@ Simply run the following command for traing the model, and if you want to test o
 python src/train.py
 ```
 
-## To-Do List
+## Citation
 
-- [x] ANN model
-- [x] CNN model
-- [x] Environment
-- [x] Trainer
-- [x] Train with various distance profiles
+We would greatly appreciate it if you find this work useful and would like to cite it:
+
+```
+@article{Kim2025NOMA,
+  title={Optimal Power Allocation and Sub-Optimal Channel Assignment for Downlink NOMA Systems Using Deep Reinforcement Learning},
+  author={W. Kim and J. Lee and S. Kim and T. An and W. Lee and D. Kim and K. Shin},
+  journal={The Journal of Korean Institute of Communications and Information Sciences},
+  volume={50},
+  number={3},
+  pages={406-419},
+  year={2025},
+  doi={10.7840/kics.2025.50.3.406}
+}
+```
+
+## Reference
 
 <a id="1" href="https://ieeexplore.ieee.org/abstract/document/8790780">[1]</a>
 He, Chaofan, Yang Hu, Yan Chen, and Bing Zeng. "Joint power allocation and channel assignment for NOMA with deep reinforcement learning."
