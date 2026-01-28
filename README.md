@@ -3,7 +3,7 @@
 > [!IMPORTANT]
 > The following work has been accepted and published in _The Journal of Korean Institute of Communication and Information Sciences (JKICS)_!
 >
-> If you are interested, please check out the paper [here](https://journal.kics.or.kr/digital-library/102248).
+> If you are interested, please check out the paper [arXiv](https://arxiv.org/abs/2601.12242) or [JKICS](https://journal.kics.or.kr/digital-library/102248).
 
 ## Introduction
 
